@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
+use forzabeast::backends::directinput::DirectInput;
 use forzabeast::backends::ffbeast::{DirectControl, FFBeastBackend};
 use forzabeast::backends::ffbeast_direct::FFBeastDirectAdapter;
 use forzabeast::config::load_controllers;
@@ -26,6 +27,14 @@ struct Cli {
 enum Command {
     Probe,
     ListInputs,
+    ListDirectInput {
+        #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
+        config: String,
+    },
+    OpenFfbDevice {
+        #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
+        config: String,
+    },
     VJoyInit {
         #[arg(long, default_value_t = 1)]
         id: u32,
@@ -98,6 +107,39 @@ fn main() -> Result<()> {
                     );
                 }
             }
+        }
+        Command::ListDirectInput { config } => {
+            let controllers = load_controllers(&config)?;
+            let direct_input = DirectInput::create()?;
+            let devices = direct_input.list_devices(&controllers)?;
+            if devices.is_empty() {
+                println!("no non-vJoy DirectInput game controllers found");
+            } else {
+                for device in devices {
+                    println!(
+                        "instance={} instance_guid={} product_guid={} configured={} configured_ffb={}",
+                        device.instance_name,
+                        device.instance_guid,
+                        device.product_guid,
+                        device.configured,
+                        device.configured_ffb,
+                    );
+                }
+            }
+        }
+        Command::OpenFfbDevice { config } => {
+            let controllers = load_controllers(&config)?;
+            let direct_input = DirectInput::create()?;
+            let device = direct_input.open_configured_ffb_device(&controllers)?;
+            let info = device.info();
+            let caps = device.cached_capabilities();
+            println!(
+                "opened DirectInput FFB device '{}' instance_guid={} product_guid={} force_feedback_capable={}",
+                info.instance_name,
+                info.instance_guid,
+                info.product_guid,
+                caps.force_feedback_capable,
+            );
         }
         Command::VJoyInit { id } => {
             let dev = VJoyDevice::initialize(id)?;
