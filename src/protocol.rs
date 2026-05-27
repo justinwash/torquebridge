@@ -1,6 +1,6 @@
 use crate::constants::{DATA_OVERRIDE_DIRECT_CONTROL, REPORT_SIZE};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DirectControl {
     pub spring_force: i16,
     pub constant_force: i16,

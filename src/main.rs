@@ -1,11 +1,12 @@
-mod constants;
-mod device;
-mod protocol;
-
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
-use device::FFBeastDevice;
-use protocol::DirectControl;
+use forzabeast::backends::ffbeast::{DirectControl, FFBeastBackend};
+use forzabeast::config::load_controllers;
+use forzabeast::core::domain::{EffectMetadata, EffectUpdate, GameEffect};
+use forzabeast::effect_engine::EffectEngine;
+use forzabeast::frontends::forza_vjoy::{
+    InputFrame, InputMapper, RegisteredFfbCallback, VJoyDevice,
+};
 use std::thread;
 use std::time::Duration;
 
@@ -22,6 +23,32 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Probe,
+    VJoyInit {
+        #[arg(long, default_value_t = 1)]
+        id: u32,
+    },
+    ShowConfig {
+        #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
+        config: String,
+    },
+    FeederDemo {
+        #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
+        config: String,
+        #[arg(long, default_value_t = 1)]
+        id: u32,
+    },
+    TranslateDemo {
+        #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
+        config: String,
+    },
+    FfbBridge {
+        #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
+        config: String,
+        #[arg(long, default_value_t = 1)]
+        id: u32,
+        #[arg(long, default_value_t = 5)]
+        poll_ms: u64,
+    },
     State {
         #[arg(long, default_value_t = 10)]
         count: u32,
@@ -51,13 +78,144 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Command::Probe => {
-            let _dev = FFBeastDevice::connect()?;
+            let _backend = FFBeastBackend::connect()?;
             println!("Connected to FFBeast (045B:59D7)");
         }
+        Command::VJoyInit { id } => {
+            let dev = VJoyDevice::initialize(id)?;
+            println!(
+                "vJoy device {} ready; ffb_capable={}",
+                dev.id(),
+                dev.is_ffb_capable()
+            );
+        }
+        Command::ShowConfig { config } => {
+            let controllers = load_controllers(&config)?;
+            let mapper = InputMapper::from_config(&controllers);
+            println!("loaded {} configured controller(s)", controllers.len());
+            println!("steering mapped: {}", mapper.mapping.steering.is_some());
+            println!("combined mapped: {}", mapper.mapping.combined.is_some());
+            println!("buttons mapped: {}", mapper.mapping.buttons.len());
+            println!("dpad mapped: {}", mapper.mapping.dpad.is_some());
+
+            let ffb_device = controllers
+                .iter()
+                .find(|controller| controller.ffb_parameters.is_some());
+            println!(
+                "ffb device: {}",
+                ffb_device
+                    .map(|controller| controller.instance_name.as_str())
+                    .unwrap_or("<none>")
+            );
+        }
+        Command::FeederDemo { config, id } => {
+            let controllers = load_controllers(&config)?;
+            let mut mapper = InputMapper::from_config(&controllers);
+            let mut vjoy = VJoyDevice::initialize(id)?;
+            mapper.reset_vjoy_state(&mut vjoy);
+
+            let frames: Vec<InputFrame> = controllers
+                .iter()
+                .enumerate()
+                .map(|(index, controller)| InputFrame {
+                    x: if index == 0 { 40_000 } else { 32_767 },
+                    y: 32_767,
+                    z: 32_767,
+                    rotation_x: 32_767,
+                    rotation_y: 32_767,
+                    rotation_z: 32_767,
+                    sliders: [32_767, 32_767],
+                    buttons: vec![
+                        false;
+                        controller
+                            .buttons
+                            .as_ref()
+                            .map(|buttons| buttons.len().max(32))
+                            .unwrap_or(32)
+                    ],
+                    point_of_view_controllers: vec![
+                        -1;
+                        controller
+                            .d_pad
+                            .as_ref()
+                            .map(|dpad| dpad.index + 1)
+                            .unwrap_or(1)
+                    ],
+                })
+                .collect();
+
+            mapper.apply_input_frames(&frames, &mut vjoy)?;
+            println!(
+                "feeder demo applied using {} input frame(s) to vJoy device {}",
+                frames.len(),
+                id
+            );
+        }
+        Command::TranslateDemo { config } => {
+            let controllers = load_controllers(&config)?;
+            let settings = controllers
+                .iter()
+                .find_map(|controller| controller.ffb_parameters.clone())
+                .ok_or_else(|| anyhow!("no FFBParameters entry found in config"))?;
+            let mut engine = EffectEngine::new(settings);
+
+            let update = EffectUpdate::Apply(GameEffect::Constant {
+                metadata: EffectMetadata {
+                    duration_ms: 100,
+                    gain: 10_000,
+                    raw_gain: 255,
+                    direction: 0,
+                    sample_period: 0,
+                    trigger_button: -1,
+                    trigger_repeat_interval: 0,
+                },
+                magnitude: 8_000,
+            });
+
+            let commands = engine.translate(&update, -1);
+            println!("translated commands: {:?}", commands);
+        }
+        Command::FfbBridge {
+            config,
+            id,
+            poll_ms,
+        } => {
+            let controllers = load_controllers(&config)?;
+            let settings = controllers
+                .iter()
+                .find_map(|controller| controller.ffb_parameters.clone())
+                .ok_or_else(|| anyhow!("no FFBParameters entry found in config"))?;
+
+            let vjoy = VJoyDevice::initialize(id)?;
+            if !vjoy.is_ffb_capable() {
+                return Err(anyhow!("vJoy device {id} is not FFB-capable"));
+            }
+
+            let callback = RegisteredFfbCallback::register(vjoy, settings)?;
+            let backend = FFBeastBackend::connect()?;
+
+            println!(
+                "registered FFB bridge on vJoy device {}; forwarding translated output to FFBeast every {} ms",
+                callback.id(),
+                poll_ms
+            );
+            println!(
+                "steering-state updates are not live yet in this command; spring filtering still uses callback runtime state only"
+            );
+
+            loop {
+                if let Some(control) = callback.take_pending_output()? {
+                    backend.send_direct_control(control)?;
+                    println!("forwarded direct control: {:?}", control);
+                }
+
+                thread::sleep(Duration::from_millis(poll_ms));
+            }
+        }
         Command::State { count, timeout_ms } => {
-            let dev = FFBeastDevice::connect()?;
+            let backend = FFBeastBackend::connect()?;
             for _ in 0..count {
-                let state = dev.read_state_blocking(timeout_ms)?;
+                let state = backend.read_state_blocking(timeout_ms)?;
                 println!(
                     "fw={:?} reg={} pos={} ({:.3}) torque={} ({:.3})",
                     state.firmware_raw,
@@ -76,20 +234,20 @@ fn main() -> Result<()> {
             drop,
             hold_ms,
         } => {
-            let dev = FFBeastDevice::connect()?;
-            let cmd = DirectControl {
+            let backend = FFBeastBackend::connect()?;
+            let command = DirectControl {
                 spring_force: spring,
                 constant_force: constant,
                 periodic_force: periodic,
                 force_drop: drop,
             };
 
-            dev.send_direct_control(cmd)?;
-            println!("Applied direct control: {:?}", cmd.clamped());
+            backend.send_direct_control(command)?;
+            println!("Applied direct control: {:?}", command.clamped());
 
             if hold_ms > 0 {
                 thread::sleep(Duration::from_millis(hold_ms));
-                dev.send_direct_control(DirectControl {
+                backend.send_direct_control(DirectControl {
                     spring_force: 0,
                     constant_force: 0,
                     periodic_force: 0,
@@ -99,8 +257,8 @@ fn main() -> Result<()> {
             }
         }
         Command::Gain { percent } => {
-            let dev = FFBeastDevice::connect()?;
-            dev.set_device_gain(percent)?;
+            let backend = FFBeastBackend::connect()?;
+            backend.set_device_gain(percent)?;
             println!("Set device gain to {}%", percent.min(100));
         }
     }
