@@ -1,12 +1,14 @@
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use forzabeast::backends::ffbeast::{DirectControl, FFBeastBackend};
+use forzabeast::backends::ffbeast_direct::FFBeastDirectAdapter;
 use forzabeast::config::load_controllers;
 use forzabeast::core::domain::{EffectMetadata, EffectUpdate, GameEffect};
 use forzabeast::effect_engine::EffectEngine;
 use forzabeast::frontends::forza_vjoy::{
     InputFrame, InputMapper, RegisteredFfbCallback, VJoyDevice,
 };
+use forzabeast::inputs::WinmmJoystick;
 use std::thread;
 use std::time::Duration;
 
@@ -23,6 +25,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Probe,
+    ListInputs,
     VJoyInit {
         #[arg(long, default_value_t = 1)]
         id: u32,
@@ -46,6 +49,8 @@ enum Command {
         config: String,
         #[arg(long, default_value_t = 1)]
         id: u32,
+        #[arg(long)]
+        steering_device: Option<u32>,
         #[arg(long, default_value_t = 5)]
         poll_ms: u64,
     },
@@ -80,6 +85,19 @@ fn main() -> Result<()> {
         Command::Probe => {
             let _backend = FFBeastBackend::connect()?;
             println!("Connected to FFBeast (045B:59D7)");
+        }
+        Command::ListInputs => {
+            let devices = WinmmJoystick::list_devices()?;
+            if devices.is_empty() {
+                println!("no WinMM joystick devices found");
+            } else {
+                for device in devices {
+                    println!(
+                        "id={} name={} axes={} buttons={}",
+                        device.id, device.name, device.axis_count, device.button_count
+                    );
+                }
+            }
         }
         Command::VJoyInit { id } => {
             let dev = VJoyDevice::initialize(id)?;
@@ -178,6 +196,7 @@ fn main() -> Result<()> {
         Command::FfbBridge {
             config,
             id,
+            steering_device,
             poll_ms,
         } => {
             let controllers = load_controllers(&config)?;
@@ -193,20 +212,42 @@ fn main() -> Result<()> {
 
             let callback = RegisteredFfbCallback::register(vjoy, settings)?;
             let backend = FFBeastBackend::connect()?;
+            let mut direct_adapter = FFBeastDirectAdapter::new();
+            let mut steering_input = steering_device.map(WinmmJoystick::open).transpose()?;
 
             println!(
                 "registered FFB bridge on vJoy device {}; forwarding translated output to FFBeast every {} ms",
                 callback.id(),
                 poll_ms
             );
-            println!(
-                "steering-state updates are not live yet in this command; spring filtering still uses callback runtime state only"
-            );
+
+            if let Some(input) = steering_input.as_ref() {
+                println!(
+                    "using WinMM input device {} ({}) for live steering-state updates",
+                    input.id(),
+                    input.name()
+                );
+            } else {
+                println!(
+                    "no live steering input selected; run 'forzabeast list-inputs' and pass --steering-device <id> to enable steering-state updates"
+                );
+            }
 
             loop {
-                if let Some(control) = callback.take_pending_output()? {
-                    backend.send_direct_control(control)?;
-                    println!("forwarded direct control: {:?}", control);
+                if let Some(input) = steering_input.as_mut() {
+                    let frame = input.poll_input_frame()?;
+                    callback.update_steering_state(frame.x)?;
+                    if let Some(control) = direct_adapter.update_steering_state(frame.x) {
+                        backend.send_direct_control(control)?;
+                        println!("forwarded steering-derived direct control: {:?}", control);
+                    }
+                }
+
+                if let Some(update) = callback.take_pending_update()? {
+                    if let Some(control) = direct_adapter.apply_commands(&update.commands) {
+                        backend.send_direct_control(control)?;
+                        println!("forwarded direct control: {:?}", control);
+                    }
                 }
 
                 thread::sleep(Duration::from_millis(poll_ms));
