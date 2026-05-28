@@ -1,4 +1,5 @@
 use libloading::{Library, Symbol};
+use std::env;
 use std::ffi::c_void;
 use thiserror::Error;
 
@@ -410,15 +411,24 @@ pub(crate) struct RawApi {
 
 impl RawApi {
     pub(crate) fn load() -> Result<Self, VJoyError> {
-        let candidates = [
-            "vJoyInterface.dll",
-            "./vJoyInterface.dll",
-            "C:\\Windows\\System32\\vJoyInterface.dll",
+        let mut candidates = vec![
+            "vJoyInterface.dll".to_string(),
+            "./vJoyInterface.dll".to_string(),
+            "C:\\Windows\\System32\\vJoyInterface.dll".to_string(),
         ];
+
+        for program_files in ["ProgramFiles", "ProgramFiles(x86)"] {
+            if let Some(root) = env::var_os(program_files) {
+                let root = root.to_string_lossy();
+                candidates.push(format!("{root}\\vJoy\\x64\\vJoyInterface.dll"));
+                candidates.push(format!("{root}\\vJoy\\x86\\vJoyInterface.dll"));
+                candidates.push(format!("{root}\\vJoy\\vJoyInterface.dll"));
+            }
+        }
 
         let mut loaded = None;
         for candidate in candidates {
-            if let Ok(lib) = unsafe { Library::new(candidate) } {
+            if let Ok(lib) = unsafe { Library::new(&candidate) } {
                 loaded = Some(lib);
                 break;
             }

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use thiserror::Error;
@@ -58,7 +58,7 @@ pub struct DPadConfig {
     pub index: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct FfbParamsConfig {
     pub r#const: ConstFfbConfig,
@@ -67,7 +67,7 @@ pub struct FfbParamsConfig {
     pub damper: ConditionFfbConfig,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ConstFfbConfig {
     pub magnitude: f32,
@@ -77,7 +77,7 @@ pub struct ConstFfbConfig {
     pub minimum_coefficient: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PeriodicFfbConfig {
     pub magnitude: f32,
@@ -89,14 +89,14 @@ pub struct PeriodicFfbConfig {
     pub gear_shift_vibrations: VibrationConfig,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct VibrationConfig {
     pub frequency: f32,
     pub strength: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ConditionFfbConfig {
     pub coefficient: f32,

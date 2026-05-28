@@ -1,0 +1,38 @@
+{
+  "Version": 1,
+  "Name": "Baseline Compatibility Bridge",
+  "Notes": "Starting point extracted from the current Torquebridge configuration. SteeringDevice is intentionally left unset because the WinMM device id is machine-specific.",
+  "PollMs": 5,
+  "FFBParameters": {
+    "Const": {
+      "Magnitude": 1.0,
+      "MaximumForce": 0.92,
+      "MinimumForce": 0.03,
+      "FilterThreshold": 0.18,
+      "MinimumCoefficient": 0.55
+    },
+    "Sine": {
+      "Magnitude": 0.75,
+      "Frequency": 1.0,
+      "MaximumForce": 0.75,
+      "MinimumForce": 0.0,
+      "Phase": 0.375,
+      "EngineVibrations": {
+        "Frequency": 1.0,
+        "Strength": 0.015
+      },
+      "GearShiftVibrations": {
+        "Frequency": 1.0,
+        "Strength": 0.06
+      }
+    },
+    "Spring": {
+      "Coefficient": 0.03,
+      "Saturation": 0.0
+    },
+    "Damper": {
+      "Coefficient": 0.02,
+      "Saturation": 0.0
+    }
+  }
+}

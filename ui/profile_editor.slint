@@ -1,0 +1,487 @@
+import { LineEdit, ScrollView, Slider } from "std-widgets.slint";
+
+component NavCard inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+
+    height: 50px;
+    border-radius: 16px;
+    background: selected ? #1a2230 : #10141d;
+    border-color: selected ? #d7a23a : #18202d;
+    border-width: 1px;
+
+    HorizontalLayout {
+        padding: 14px;
+        spacing: 12px;
+
+        Rectangle {
+            width: 5px;
+            border-radius: 999px;
+            background: selected ? #d7a23a : #18202d;
+        }
+
+        Text {
+            text: label;
+            color: selected ? #f9fbff : #8d96a8;
+            font-size: 15px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component ActionButton inherits Rectangle {
+    in property <string> label;
+    callback pressed();
+
+    height: 48px;
+    border-radius: 18px;
+    background: #d39a2d;
+
+    Text {
+        text: label;
+        color: #1a1305;
+        font-size: 15px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        clicked => {
+            root.pressed();
+        }
+    }
+}
+
+component FieldCard inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <float> minimum: 0;
+    in property <float> maximum: 1;
+    in-out property <float> value: 0;
+
+    border-radius: 20px;
+    background: #131923;
+    border-color: #1d2533;
+    border-width: 1px;
+    min-height: 140px;
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 10px;
+
+        Text {
+            text: title;
+            color: #f6f8fb;
+            font-size: 17px;
+            font-weight: 700;
+        }
+
+        Text {
+            text: subtitle;
+            color: #7f8aa0;
+            font-size: 13px;
+        }
+
+        Rectangle {
+            height: 42px;
+            border-radius: 14px;
+            background: #0d1118;
+
+            Text {
+                text: value;
+                color: #dfe6f4;
+                font-size: 15px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        Slider {
+            minimum: minimum;
+            maximum: maximum;
+            value <=> root.value;
+        }
+    }
+}
+
+export component ProfileEditorWindow inherits Window {
+    in-out property <string> profile_name;
+    in-out property <string> profile_path;
+    in-out property <string> notes;
+    in-out property <string> status_message;
+    in-out property <float> poll_ms;
+    in-out property <float> const_magnitude;
+    in-out property <float> const_maximum_force;
+    in-out property <float> const_minimum_force;
+    in-out property <float> const_filter_threshold;
+    in-out property <float> const_minimum_coefficient;
+    in-out property <float> sine_magnitude;
+    in-out property <float> sine_frequency;
+    in-out property <float> sine_maximum_force;
+    in-out property <float> sine_phase;
+    in-out property <float> engine_vibration_strength;
+    in-out property <float> gear_shift_strength;
+    in-out property <float> spring_coefficient;
+    in-out property <float> spring_saturation;
+    in-out property <float> damper_coefficient;
+    in-out property <float> damper_saturation;
+
+    callback save_requested();
+
+    preferred-width: 1440px;
+    preferred-height: 920px;
+    min-width: 1200px;
+    min-height: 820px;
+    title: "forzabeast Profile Studio";
+    background: #090c12;
+
+    Rectangle {
+        background: #090c12;
+        HorizontalLayout {
+            padding: 22px;
+            spacing: 22px;
+
+            Rectangle {
+                width: 232px;
+                border-radius: 28px;
+                background: #0f131b;
+                border-color: #181f2c;
+                border-width: 1px;
+
+                VerticalLayout {
+                    padding: 22px;
+                    spacing: 16px;
+
+                    Text {
+                        text: "forzabeast";
+                        color: #ffffff;
+                        font-size: 26px;
+                        font-weight: 800;
+                    }
+
+                    Text {
+                        text: "Profile Studio";
+                        color: #8994a9;
+                        font-size: 14px;
+                    }
+
+                    Rectangle {
+                        height: 1px;
+                        background: #18202d;
+                    }
+
+                    NavCard { label: "Force Profile"; selected: true; }
+                    NavCard { label: "Runtime"; }
+                    NavCard { label: "Telemetry Soon"; }
+                    NavCard { label: "Bridge Tools"; }
+
+                    Rectangle { }
+
+                    Rectangle {
+                        border-radius: 18px;
+                        background: #121824;
+                        border-color: #1e2737;
+                        border-width: 1px;
+                        min-height: 154px;
+
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 10px;
+
+                            Text {
+                                text: "Live Editing";
+                                color: #f8fbff;
+                                font-size: 17px;
+                                font-weight: 700;
+                            }
+
+                            Text {
+                                text: "Save writes the JSON profile directly. The running bridge can hot reload it without a restart.";
+                                color: #8390a7;
+                                font-size: 13px;
+                            }
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 18px;
+
+                Rectangle {
+                    border-radius: 28px;
+                    background: #0f141d;
+                    border-color: #1a2230;
+                    border-width: 1px;
+                    min-height: 170px;
+
+                    VerticalLayout {
+                        padding: 22px;
+                        spacing: 14px;
+
+                        HorizontalLayout {
+                            spacing: 14px;
+
+                            VerticalLayout {
+                                spacing: 6px;
+
+                                Text {
+                                    text: profile_name;
+                                    color: #f9fbff;
+                                    font-size: 30px;
+                                    font-weight: 800;
+                                }
+
+                                Text {
+                                    text: profile_path;
+                                    color: #7d89a0;
+                                    font-size: 13px;
+                                }
+                            }
+
+                            Rectangle { }
+
+                            ActionButton {
+                                width: 150px;
+                                label: "Save Profile";
+                                pressed => {
+                                    root.save_requested();
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 14px;
+
+                            Rectangle {
+                                border-radius: 18px;
+                                background: #131923;
+                                border-color: #1d2533;
+                                border-width: 1px;
+                                min-height: 76px;
+                                HorizontalLayout {
+                                    padding: 16px;
+                                    spacing: 10px;
+
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text {
+                                            text: "Profile Name";
+                                            color: #c8d0df;
+                                            font-size: 13px;
+                                        }
+
+                                        LineEdit {
+                                            text <=> root.profile_name;
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                border-radius: 18px;
+                                background: #131923;
+                                border-color: #1d2533;
+                                border-width: 1px;
+                                min-height: 76px;
+                                HorizontalLayout {
+                                    padding: 16px;
+                                    spacing: 10px;
+
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text {
+                                            text: "Notes";
+                                            color: #c8d0df;
+                                            font-size: 13px;
+                                        }
+
+                                        LineEdit {
+                                            text <=> root.notes;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: status_message;
+                            color: #90b2ff;
+                            font-size: 13px;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    border-radius: 28px;
+                    background: #0f141d;
+                    border-color: #1a2230;
+                    border-width: 1px;
+
+                    ScrollView {
+                        VerticalLayout {
+                            padding: 22px;
+                            spacing: 20px;
+
+                            Text {
+                                text: "Force Tuning";
+                                color: #ffffff;
+                                font-size: 24px;
+                                font-weight: 800;
+                            }
+
+                            Text {
+                                text: "A tighter release-grade shell can come later. This first Slint slice already edits the exact profile file that ffb-bridge watches live.";
+                                color: #7f8aa0;
+                                font-size: 14px;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 18px;
+
+                                VerticalLayout {
+                                    spacing: 18px;
+
+                                    FieldCard {
+                                        title: "Poll Interval";
+                                        subtitle: "How often the bridge polls steering state and applies updates.";
+                                        minimum: 1;
+                                        maximum: 20;
+                                        value <=> root.poll_ms;
+                                    }
+
+                                    FieldCard {
+                                        title: "Constant Magnitude";
+                                        subtitle: "Overall scale applied to constant-force effects.";
+                                        minimum: 0;
+                                        maximum: 2;
+                                        value <=> root.const_magnitude;
+                                    }
+
+                                    FieldCard {
+                                        title: "Constant Maximum";
+                                        subtitle: "Cap for the strongest constant forces.";
+                                        minimum: 0;
+                                        maximum: 1;
+                                        value <=> root.const_maximum_force;
+                                    }
+
+                                    FieldCard {
+                                        title: "Constant Minimum";
+                                        subtitle: "Minimum force floor to avoid weak detail disappearing.";
+                                        minimum: 0;
+                                        maximum: 0.25;
+                                        value <=> root.const_minimum_force;
+                                    }
+
+                                    FieldCard {
+                                        title: "Filter Threshold";
+                                        subtitle: "Threshold before steering-state filtering starts shaping forces.";
+                                        minimum: 0;
+                                        maximum: 1;
+                                        value <=> root.const_filter_threshold;
+                                    }
+
+                                    FieldCard {
+                                        title: "Minimum Steering Coefficient";
+                                        subtitle: "Lower bound for steering-state filtered constant forces.";
+                                        minimum: 0;
+                                        maximum: 1;
+                                        value <=> root.const_minimum_coefficient;
+                                    }
+
+                                    FieldCard {
+                                        title: "Spring Coefficient";
+                                        subtitle: "Centering strength applied to spring effects.";
+                                        minimum: 0;
+                                        maximum: 0.25;
+                                        value <=> root.spring_coefficient;
+                                    }
+
+                                    FieldCard {
+                                        title: "Spring Saturation";
+                                        subtitle: "Cap for spring saturation under heavy condition forces.";
+                                        minimum: 0;
+                                        maximum: 1;
+                                        value <=> root.spring_saturation;
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    spacing: 18px;
+
+                                    FieldCard {
+                                        title: "Sine Magnitude";
+                                        subtitle: "Overall amplitude of periodic vibration effects.";
+                                        minimum: 0;
+                                        maximum: 1.5;
+                                        value <=> root.sine_magnitude;
+                                    }
+
+                                    FieldCard {
+                                        title: "Sine Frequency Scale";
+                                        subtitle: "Global multiplier applied to periodic timing.";
+                                        minimum: 0.25;
+                                        maximum: 4;
+                                        value <=> root.sine_frequency;
+                                    }
+
+                                    FieldCard {
+                                        title: "Sine Maximum";
+                                        subtitle: "Upper clamp for vibration amplitude.";
+                                        minimum: 0;
+                                        maximum: 1;
+                                        value <=> root.sine_maximum_force;
+                                    }
+
+                                    FieldCard {
+                                        title: "Sine Phase";
+                                        subtitle: "Phase offset used when periodic effects are created.";
+                                        minimum: 0;
+                                        maximum: 1;
+                                        value <=> root.sine_phase;
+                                    }
+
+                                    FieldCard {
+                                        title: "Engine Vibration Strength";
+                                        subtitle: "Strength of the engine-vibration special case.";
+                                        minimum: 0;
+                                        maximum: 0.25;
+                                        value <=> root.engine_vibration_strength;
+                                    }
+
+                                    FieldCard {
+                                        title: "Gear Shift Strength";
+                                        subtitle: "Strength of the gear-shift vibration special case.";
+                                        minimum: 0;
+                                        maximum: 0.25;
+                                        value <=> root.gear_shift_strength;
+                                    }
+
+                                    FieldCard {
+                                        title: "Damper Coefficient";
+                                        subtitle: "Resistance scaling used for damper effects.";
+                                        minimum: 0;
+                                        maximum: 0.25;
+                                        value <=> root.damper_coefficient;
+                                    }
+
+                                    FieldCard {
+                                        title: "Damper Saturation";
+                                        subtitle: "Cap for damping saturation during heavy load transitions.";
+                                        minimum: 0;
+                                        maximum: 1;
+                                        value <=> root.damper_saturation;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -66,6 +66,10 @@ impl ForzaVJoyRuntime {
         self.steering_state = steering_state;
     }
 
+    pub fn replace_settings(&mut self, settings: FfbParamsConfig) {
+        self.effect_engine = EffectEngine::new(settings);
+    }
+
     pub fn apply_input_frames(
         &mut self,
         mapper: &mut InputMapper,
@@ -143,6 +147,16 @@ impl RegisteredFfbCallback {
             .lock()
             .map_err(|_| ForzaVJoyRuntimeError::LockPoisoned)?;
         Ok(runtime.take_pending_update())
+    }
+
+    pub fn replace_settings(&self, settings: FfbParamsConfig) -> Result<(), ForzaVJoyRuntimeError> {
+        let mut runtime = self
+            .callback_context
+            .runtime
+            .lock()
+            .map_err(|_| ForzaVJoyRuntimeError::LockPoisoned)?;
+        runtime.replace_settings(settings);
+        Ok(())
     }
 }
 

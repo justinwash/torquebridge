@@ -2,14 +2,15 @@ use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use forzabeast::backends::directinput::DirectInput;
 use forzabeast::backends::ffbeast::{DirectControl, FFBeastBackend};
-use forzabeast::backends::ffbeast_direct::FFBeastDirectAdapter;
-use forzabeast::config::load_controllers;
+use forzabeast::config::{ControllerConfig, FfbParamsConfig, load_controllers};
 use forzabeast::core::domain::{EffectMetadata, EffectUpdate, GameEffect};
 use forzabeast::effect_engine::EffectEngine;
 use forzabeast::frontends::forza_vjoy::{
     InputFrame, InputMapper, RegisteredFfbCallback, VJoyDevice,
 };
 use forzabeast::inputs::WinmmJoystick;
+use forzabeast::profile::{FfbProfile, ProfileWatcher, load_profile};
+use forzabeast::ui::run_profile_editor;
 use std::thread;
 use std::time::Duration;
 
@@ -27,6 +28,14 @@ struct Cli {
 enum Command {
     Probe,
     ListInputs,
+    ProbeInput {
+        #[arg(long)]
+        id: u32,
+        #[arg(long, default_value_t = 20)]
+        count: u32,
+        #[arg(long, default_value_t = 100)]
+        poll_ms: u64,
+    },
     ListDirectInput {
         #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
         config: String,
@@ -43,6 +52,18 @@ enum Command {
         #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
         config: String,
     },
+    ShowProfile {
+        #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
+        config: String,
+        #[arg(long)]
+        profile: Option<String>,
+    },
+    Ui {
+        #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
+        config: String,
+        #[arg(long)]
+        profile: Option<String>,
+    },
     FeederDemo {
         #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
         config: String,
@@ -52,16 +73,20 @@ enum Command {
     TranslateDemo {
         #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
         config: String,
+        #[arg(long)]
+        profile: Option<String>,
     },
     FfbBridge {
         #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
         config: String,
+        #[arg(long)]
+        profile: Option<String>,
         #[arg(long, default_value_t = 1)]
         id: u32,
         #[arg(long)]
         steering_device: Option<u32>,
-        #[arg(long, default_value_t = 5)]
-        poll_ms: u64,
+        #[arg(long)]
+        poll_ms: Option<u64>,
     },
     State {
         #[arg(long, default_value_t = 10)]
@@ -105,6 +130,40 @@ fn main() -> Result<()> {
                         "id={} name={} axes={} buttons={}",
                         device.id, device.name, device.axis_count, device.button_count
                     );
+                }
+            }
+        }
+        Command::ProbeInput { id, count, poll_ms } => {
+            let mut input = WinmmJoystick::open(id)?;
+            println!(
+                "probing WinMM input device {} ({}) for {} sample(s) every {} ms",
+                input.id(),
+                input.name(),
+                count,
+                poll_ms
+            );
+
+            for sample in 0..count {
+                let frame = input.poll_input_frame()?;
+                println!(
+                    "sample={} x={} y={} z={} rx={} ry={} rz={} pov={} buttons_down={}",
+                    sample,
+                    frame.x,
+                    frame.y,
+                    frame.z,
+                    frame.rotation_x,
+                    frame.rotation_y,
+                    frame.rotation_z,
+                    frame
+                        .point_of_view_controllers
+                        .first()
+                        .copied()
+                        .unwrap_or(-1),
+                    frame.buttons.iter().filter(|pressed| **pressed).count(),
+                );
+
+                if sample + 1 < count {
+                    thread::sleep(Duration::from_millis(poll_ms));
                 }
             }
         }
@@ -168,6 +227,13 @@ fn main() -> Result<()> {
                     .unwrap_or("<none>")
             );
         }
+        Command::ShowProfile { config, profile } => {
+            let (_, effective_profile) = load_effective_profile(&config, profile.as_deref())?;
+            println!("{}", serde_json::to_string_pretty(&effective_profile)?);
+        }
+        Command::Ui { config, profile } => {
+            run_profile_editor(&config, profile.as_deref())?;
+        }
         Command::FeederDemo { config, id } => {
             let controllers = load_controllers(&config)?;
             let mut mapper = InputMapper::from_config(&controllers);
@@ -211,13 +277,9 @@ fn main() -> Result<()> {
                 id
             );
         }
-        Command::TranslateDemo { config } => {
-            let controllers = load_controllers(&config)?;
-            let settings = controllers
-                .iter()
-                .find_map(|controller| controller.ffb_parameters.clone())
-                .ok_or_else(|| anyhow!("no FFBParameters entry found in config"))?;
-            let mut engine = EffectEngine::new(settings);
+        Command::TranslateDemo { config, profile } => {
+            let (_, effective_profile) = load_effective_profile(&config, profile.as_deref())?;
+            let mut engine = EffectEngine::new(effective_profile.ffb_parameters.clone());
 
             let update = EffectUpdate::Apply(GameEffect::Constant {
                 metadata: EffectMetadata {
@@ -233,19 +295,31 @@ fn main() -> Result<()> {
             });
 
             let commands = engine.translate(&update, -1);
+            println!(
+                "profile: {}",
+                effective_profile
+                    .name
+                    .as_deref()
+                    .unwrap_or("<embedded config>")
+            );
             println!("translated commands: {:?}", commands);
         }
         Command::FfbBridge {
             config,
+            profile,
             id,
             steering_device,
             poll_ms,
         } => {
-            let controllers = load_controllers(&config)?;
-            let settings = controllers
-                .iter()
-                .find_map(|controller| controller.ffb_parameters.clone())
-                .ok_or_else(|| anyhow!("no FFBParameters entry found in config"))?;
+            let (controllers, effective_profile) =
+                load_effective_profile(&config, profile.as_deref())?;
+            let settings = effective_profile.ffb_parameters.clone();
+            let cli_steering_device = steering_device;
+            let cli_poll_ms = poll_ms;
+            let mut steering_device =
+                effective_profile.resolved_steering_device(cli_steering_device);
+            let mut poll_ms = effective_profile.resolved_poll_ms(cli_poll_ms, 5);
+            let mut profile_watcher = profile.as_deref().map(ProfileWatcher::new).transpose()?;
 
             let vjoy = VJoyDevice::initialize(id)?;
             if !vjoy.is_ffb_capable() {
@@ -253,43 +327,78 @@ fn main() -> Result<()> {
             }
 
             let callback = RegisteredFfbCallback::register(vjoy, settings)?;
-            let backend = FFBeastBackend::connect()?;
-            let mut direct_adapter = FFBeastDirectAdapter::new();
+            let direct_input = DirectInput::create()?;
+            let mut output = direct_input.open_configured_ffb_device(&controllers)?;
             let mut steering_input = steering_device.map(WinmmJoystick::open).transpose()?;
 
             println!(
-                "registered FFB bridge on vJoy device {}; forwarding translated output to FFBeast every {} ms",
+                "registered FFB bridge on vJoy device {}; forwarding translated output to DirectInput device '{}' every {} ms",
                 callback.id(),
+                output.info().instance_name,
                 poll_ms
             );
 
-            if let Some(input) = steering_input.as_ref() {
+            println!(
+                "using force profile {}",
+                effective_profile
+                    .name
+                    .as_deref()
+                    .unwrap_or("<embedded config>")
+            );
+
+            if let Some(watcher) = profile_watcher.as_ref() {
                 println!(
-                    "using WinMM input device {} ({}) for live steering-state updates",
-                    input.id(),
-                    input.name()
-                );
-            } else {
-                println!(
-                    "no live steering input selected; run 'forzabeast list-inputs' and pass --steering-device <id> to enable steering-state updates"
+                    "watching profile file {} for changes",
+                    watcher.path().display()
                 );
             }
 
+            print_steering_input_status(steering_input.as_ref());
+
             loop {
-                if let Some(input) = steering_input.as_mut() {
-                    let frame = input.poll_input_frame()?;
-                    callback.update_steering_state(frame.x)?;
-                    if let Some(control) = direct_adapter.update_steering_state(frame.x) {
-                        backend.send_direct_control(control)?;
-                        println!("forwarded steering-derived direct control: {:?}", control);
+                if let Some(watcher) = profile_watcher.as_mut() {
+                    match watcher.reload_if_changed() {
+                        Ok(Some(reloaded_profile)) => {
+                            callback.replace_settings(reloaded_profile.ffb_parameters.clone())?;
+
+                            let next_poll_ms = reloaded_profile.resolved_poll_ms(cli_poll_ms, 5);
+                            if next_poll_ms != poll_ms {
+                                poll_ms = next_poll_ms;
+                                println!("updated profile poll interval to {} ms", poll_ms);
+                            }
+
+                            let next_steering_device =
+                                reloaded_profile.resolved_steering_device(cli_steering_device);
+                            if next_steering_device != steering_device {
+                                steering_input =
+                                    next_steering_device.map(WinmmJoystick::open).transpose()?;
+                                steering_device = next_steering_device;
+                                print_steering_input_status(steering_input.as_ref());
+                            }
+
+                            println!(
+                                "reloaded force profile {}",
+                                reloaded_profile.name.as_deref().unwrap_or("<unnamed>")
+                            );
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            eprintln!(
+                                "profile reload failed for {}: {}",
+                                watcher.path().display(),
+                                error
+                            );
+                        }
                     }
                 }
 
+                if let Some(input) = steering_input.as_mut() {
+                    let frame = input.poll_input_frame()?;
+                    callback.update_steering_state(frame.x)?;
+                }
+
                 if let Some(update) = callback.take_pending_update()? {
-                    if let Some(control) = direct_adapter.apply_commands(&update.commands) {
-                        backend.send_direct_control(control)?;
-                        println!("forwarded direct control: {:?}", control);
-                    }
+                    output.apply_commands(&update.commands)?;
                 }
 
                 thread::sleep(Duration::from_millis(poll_ms));
@@ -347,4 +456,39 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn load_effective_profile(
+    config: &str,
+    profile_path: Option<&str>,
+) -> Result<(Vec<ControllerConfig>, FfbProfile)> {
+    let controllers = load_controllers(config)?;
+    let profile = if let Some(path) = profile_path {
+        load_profile(path)?
+    } else {
+        FfbProfile::from_ffb_settings(load_ffb_settings(&controllers)?)
+    };
+
+    Ok((controllers, profile))
+}
+
+fn load_ffb_settings(controllers: &[ControllerConfig]) -> Result<FfbParamsConfig> {
+    controllers
+        .iter()
+        .find_map(|controller| controller.ffb_parameters.clone())
+        .ok_or_else(|| anyhow!("no FFBParameters entry found in config"))
+}
+
+fn print_steering_input_status(input: Option<&WinmmJoystick>) {
+    if let Some(input) = input {
+        println!(
+            "using WinMM input device {} ({}) for live steering-state updates",
+            input.id(),
+            input.name()
+        );
+    } else {
+        println!(
+            "no live steering input selected; run 'forzabeast list-inputs' and pass --steering-device <id> to enable steering-state updates"
+        );
+    }
 }
