@@ -2,12 +2,13 @@ import { LineEdit, ScrollView, Slider } from "std-widgets.slint";
 
 component NavCard inherits Rectangle {
     in property <string> label;
+    in property <string> tag;
     in property <bool> selected: false;
 
-    height: 50px;
-    border-radius: 16px;
-    background: selected ? #1a2230 : #10141d;
-    border-color: selected ? #d7a23a : #18202d;
+    height: 54px;
+    border-radius: 18px;
+    background: selected ? #182233 : #0f141d;
+    border-color: selected ? #c8942d : #1b2332;
     border-width: 1px;
 
     HorizontalLayout {
@@ -15,9 +16,19 @@ component NavCard inherits Rectangle {
         spacing: 12px;
 
         Rectangle {
-            width: 5px;
-            border-radius: 999px;
-            background: selected ? #d7a23a : #18202d;
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            background: selected ? #d39a2d : #141b27;
+
+            Text {
+                text: tag;
+                color: selected ? #1a1305 : #8e98aa;
+                font-size: 11px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
         }
 
         Text {
@@ -32,17 +43,49 @@ component NavCard inherits Rectangle {
 
 component ActionButton inherits Rectangle {
     in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
     callback pressed();
 
     height: 48px;
     border-radius: 18px;
-    background: #d39a2d;
+    background: !enabled ? #272d37 : (primary ? #d39a2d : #171e2b);
+    border-color: primary ? #d39a2d : #232c3c;
+    border-width: primary ? 0px : 1px;
 
     Text {
         text: label;
-        color: #1a1305;
+        color: primary ? #1a1305 : #e3e8f2;
         font-size: 15px;
         font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.pressed();
+        }
+    }
+}
+
+component SegmentButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback pressed();
+
+    height: 42px;
+    border-radius: 16px;
+    background: selected ? #d39a2d : #111722;
+    border-color: selected ? #d39a2d : #1d2533;
+    border-width: 1px;
+
+    Text {
+        text: label;
+        color: selected ? #1a1305 : #d7ddea;
+        font-size: 14px;
+        font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -54,22 +97,55 @@ component ActionButton inherits Rectangle {
     }
 }
 
+component StatCard inherits Rectangle {
+    in property <string> title;
+    in property <string> value;
+    in property <bool> highlighted: false;
+
+    min-width: 220px;
+    min-height: 92px;
+    border-radius: 22px;
+    background: highlighted ? #171f2d : #111722;
+    border-color: highlighted ? #d39a2d : #1c2432;
+    border-width: 1px;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 6px;
+
+        Text {
+            text: title;
+            color: #8994a9;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        Text {
+            text: value;
+            color: highlighted ? #fff4d8 : #f5f8ff;
+            font-size: 18px;
+            font-weight: 800;
+        }
+    }
+}
+
 component FieldCard inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
     in property <float> minimum: 0;
     in property <float> maximum: 1;
+    in property <float> step: 0.01;
     in-out property <float> value: 0;
 
-    border-radius: 20px;
-    background: #131923;
+    border-radius: 24px;
+    background: #121925;
     border-color: #1d2533;
     border-width: 1px;
-    min-height: 140px;
+    min-height: 168px;
 
     VerticalLayout {
         padding: 18px;
-        spacing: 10px;
+        spacing: 12px;
 
         Text {
             text: title;
@@ -84,25 +160,48 @@ component FieldCard inherits Rectangle {
             font-size: 13px;
         }
 
-        Rectangle {
-            height: 42px;
-            border-radius: 14px;
-            background: #0d1118;
-
-            Text {
-                text: value;
-                color: #dfe6f4;
-                font-size: 15px;
-                font-weight: 600;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-        }
-
         Slider {
             minimum: minimum;
             maximum: maximum;
             value <=> root.value;
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+
+            ActionButton {
+                width: 44px;
+                label: "-";
+                pressed => {
+                    root.value = root.value - root.step < root.minimum ? root.minimum : root.value - root.step;
+                }
+            }
+
+            Rectangle {
+                border-radius: 14px;
+                background: #0c1118;
+                border-color: #1f2735;
+                border-width: 1px;
+                min-width: 96px;
+                height: 42px;
+
+                Text {
+                    text: value;
+                    color: #e1e7f4;
+                    font-size: 15px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            ActionButton {
+                width: 44px;
+                label: "+";
+                pressed => {
+                    root.value = root.value + root.step > root.maximum ? root.maximum : root.value + root.step;
+                }
+            }
         }
     }
 }
@@ -112,7 +211,15 @@ export component ProfileEditorWindow inherits Window {
     in-out property <string> profile_path;
     in-out property <string> notes;
     in-out property <string> status_message;
+    in-out property <string> bridge_status;
+    in-out property <string> bridge_detail;
+    in-out property <string> runtime_poll_summary;
+    in-out property <string> steering_device_summary;
+    in-out property <string> hot_reload_summary;
+    in-out property <bool> bridge_running;
+    in-out property <int> current_section: 0;
     in-out property <float> poll_ms;
+    in-out property <float> steering_device;
     in-out property <float> const_magnitude;
     in-out property <float> const_maximum_force;
     in-out property <float> const_minimum_force;
@@ -130,25 +237,28 @@ export component ProfileEditorWindow inherits Window {
     in-out property <float> damper_saturation;
 
     callback save_requested();
+    callback start_bridge_requested();
+    callback stop_bridge_requested();
 
-    preferred-width: 1440px;
-    preferred-height: 920px;
-    min-width: 1200px;
-    min-height: 820px;
+    preferred-width: 1500px;
+    preferred-height: 940px;
+    min-width: 1260px;
+    min-height: 840px;
     title: "forzabeast Profile Studio";
-    background: #090c12;
+    background: #080b11;
 
     Rectangle {
-        background: #090c12;
+        background: #080b11;
+
         HorizontalLayout {
             padding: 22px;
             spacing: 22px;
 
             Rectangle {
-                width: 232px;
-                border-radius: 28px;
-                background: #0f131b;
-                border-color: #181f2c;
+                width: 250px;
+                border-radius: 30px;
+                background: #0d1219;
+                border-color: #161d28;
                 border-width: 1px;
 
                 VerticalLayout {
@@ -158,7 +268,7 @@ export component ProfileEditorWindow inherits Window {
                     Text {
                         text: "forzabeast";
                         color: #ffffff;
-                        font-size: 26px;
+                        font-size: 28px;
                         font-weight: 800;
                     }
 
@@ -173,33 +283,33 @@ export component ProfileEditorWindow inherits Window {
                         background: #18202d;
                     }
 
-                    NavCard { label: "Force Profile"; selected: true; }
-                    NavCard { label: "Runtime"; }
-                    NavCard { label: "Telemetry Soon"; }
-                    NavCard { label: "Bridge Tools"; }
+                    NavCard { label: "Force Profile"; tag: "FX"; selected: true; }
+                    NavCard { label: "Bridge Runtime"; tag: "RT"; }
+                    NavCard { label: "Telemetry"; tag: "TM"; }
+                    NavCard { label: "Packaging"; tag: "PK"; }
 
                     Rectangle { }
 
                     Rectangle {
-                        border-radius: 18px;
-                        background: #121824;
-                        border-color: #1e2737;
+                        border-radius: 20px;
+                        background: #101722;
+                        border-color: #1d2533;
                         border-width: 1px;
-                        min-height: 154px;
+                        min-height: 188px;
 
                         VerticalLayout {
                             padding: 16px;
                             spacing: 10px;
 
                             Text {
-                                text: "Live Editing";
+                                text: "Release Direction";
                                 color: #f8fbff;
                                 font-size: 17px;
                                 font-weight: 700;
                             }
 
                             Text {
-                                text: "Save writes the JSON profile directly. The running bridge can hot reload it without a restart.";
+                                text: "This Slint shell edits the same profile JSON the bridge watches live. It is the first real presentation layer, not a throwaway admin tool.";
                                 color: #8390a7;
                                 font-size: 13px;
                             }
@@ -212,11 +322,11 @@ export component ProfileEditorWindow inherits Window {
                 spacing: 18px;
 
                 Rectangle {
-                    border-radius: 28px;
-                    background: #0f141d;
-                    border-color: #1a2230;
+                    border-radius: 30px;
+                    background: #0d131c;
+                    border-color: #18202d;
                     border-width: 1px;
-                    min-height: 170px;
+                    min-height: 184px;
 
                     VerticalLayout {
                         padding: 22px;
@@ -225,8 +335,24 @@ export component ProfileEditorWindow inherits Window {
                         HorizontalLayout {
                             spacing: 14px;
 
+                            Rectangle {
+                                width: 68px;
+                                height: 68px;
+                                border-radius: 22px;
+                                background: #d39a2d;
+
+                                Text {
+                                    text: "FB";
+                                    color: #1a1305;
+                                    font-size: 24px;
+                                    font-weight: 900;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
                             VerticalLayout {
-                                spacing: 6px;
+                                spacing: 4px;
 
                                 Text {
                                     text: profile_name;
@@ -245,7 +371,28 @@ export component ProfileEditorWindow inherits Window {
                             Rectangle { }
 
                             ActionButton {
-                                width: 150px;
+                                width: 156px;
+                                primary: false;
+                                label: "Stop Bridge";
+                                enabled: bridge_running;
+                                pressed => {
+                                    root.stop_bridge_requested();
+                                }
+                            }
+
+                            ActionButton {
+                                width: 156px;
+                                primary: true;
+                                label: bridge_running ? "Bridge Running" : "Launch Bridge";
+                                enabled: !bridge_running;
+                                pressed => {
+                                    root.start_bridge_requested();
+                                }
+                            }
+
+                            ActionButton {
+                                width: 148px;
+                                primary: true;
                                 label: "Save Profile";
                                 pressed => {
                                     root.save_requested();
@@ -258,16 +405,17 @@ export component ProfileEditorWindow inherits Window {
 
                             Rectangle {
                                 border-radius: 18px;
-                                background: #131923;
+                                background: #121925;
                                 border-color: #1d2533;
                                 border-width: 1px;
-                                min-height: 76px;
+                                min-height: 78px;
                                 HorizontalLayout {
                                     padding: 16px;
                                     spacing: 10px;
 
                                     VerticalLayout {
                                         spacing: 6px;
+
                                         Text {
                                             text: "Profile Name";
                                             color: #c8d0df;
@@ -283,16 +431,17 @@ export component ProfileEditorWindow inherits Window {
 
                             Rectangle {
                                 border-radius: 18px;
-                                background: #131923;
+                                background: #121925;
                                 border-color: #1d2533;
                                 border-width: 1px;
-                                min-height: 76px;
+                                min-height: 78px;
                                 HorizontalLayout {
                                     padding: 16px;
                                     spacing: 10px;
 
                                     VerticalLayout {
                                         spacing: 6px;
+
                                         Text {
                                             text: "Notes";
                                             color: #c8d0df;
@@ -317,8 +466,104 @@ export component ProfileEditorWindow inherits Window {
 
                 Rectangle {
                     border-radius: 28px;
-                    background: #0f141d;
-                    border-color: #1a2230;
+                    background: #0d131c;
+                    border-color: #18202d;
+                    border-width: 1px;
+                    min-height: 166px;
+
+                    VerticalLayout {
+                        padding: 20px;
+                        spacing: 14px;
+
+                        HorizontalLayout {
+                            spacing: 14px;
+
+                            Rectangle {
+                                border-radius: 18px;
+                                background: bridge_running ? #16301e : #151b24;
+                                border-color: bridge_running ? #348452 : #232b39;
+                                border-width: 1px;
+                                min-width: 240px;
+                                min-height: 84px;
+
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 6px;
+
+                                    Text {
+                                        text: "Bridge Status";
+                                        color: #8d96a8;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                    }
+
+                                    Text {
+                                        text: bridge_status;
+                                        color: bridge_running ? #d9ffe5 : #eef3ff;
+                                        font-size: 19px;
+                                        font-weight: 800;
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                border-radius: 18px;
+                                background: #111722;
+                                border-color: #1d2533;
+                                border-width: 1px;
+                                min-height: 84px;
+
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 6px;
+
+                                    Text {
+                                        text: "Runtime Detail";
+                                        color: #8d96a8;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                    }
+
+                                    Text {
+                                        text: bridge_detail;
+                                        color: #eef3ff;
+                                        font-size: 14px;
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 14px;
+
+                            StatCard {
+                                title: "POLL INTERVAL";
+                                value: runtime_poll_summary;
+                            }
+
+                            StatCard {
+                                title: "STEERING INPUT";
+                                value: steering_device_summary;
+                            }
+
+                            StatCard {
+                                title: "HOT RELOAD";
+                                value: hot_reload_summary;
+                                highlighted: true;
+                            }
+
+                            StatCard {
+                                title: "PROFILE MODE";
+                                value: bridge_running ? "Live session" : "Editor only";
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    border-radius: 28px;
+                    background: #0d131c;
+                    border-color: #18202d;
                     border-width: 1px;
 
                     ScrollView {
@@ -326,63 +571,146 @@ export component ProfileEditorWindow inherits Window {
                             padding: 22px;
                             spacing: 20px;
 
-                            Text {
-                                text: "Force Tuning";
-                                color: #ffffff;
-                                font-size: 24px;
-                                font-weight: 800;
-                            }
-
-                            Text {
-                                text: "A tighter release-grade shell can come later. This first Slint slice already edits the exact profile file that ffb-bridge watches live.";
-                                color: #7f8aa0;
-                                font-size: 14px;
-                            }
-
                             HorizontalLayout {
-                                spacing: 18px;
+                                spacing: 12px;
+
+                                SegmentButton {
+                                    label: "Runtime";
+                                    selected: root.current_section == 0;
+                                    pressed => {
+                                        root.current_section = 0;
+                                    }
+                                }
+
+                                SegmentButton {
+                                    label: "Constant";
+                                    selected: root.current_section == 1;
+                                    pressed => {
+                                        root.current_section = 1;
+                                    }
+                                }
+
+                                SegmentButton {
+                                    label: "Periodic";
+                                    selected: root.current_section == 2;
+                                    pressed => {
+                                        root.current_section = 2;
+                                    }
+                                }
+
+                                SegmentButton {
+                                    label: "Condition";
+                                    selected: root.current_section == 3;
+                                    pressed => {
+                                        root.current_section = 3;
+                                    }
+                                }
+                            }
+
+                            if root.current_section == 0 : Rectangle {
+                                background: transparent;
 
                                 VerticalLayout {
                                     spacing: 18px;
 
-                                    FieldCard {
-                                        title: "Poll Interval";
-                                        subtitle: "How often the bridge polls steering state and applies updates.";
-                                        minimum: 1;
-                                        maximum: 20;
-                                        value <=> root.poll_ms;
+                                    Text {
+                                        text: "Runtime Controls";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
                                     }
 
-                                    FieldCard {
-                                        title: "Constant Magnitude";
-                                        subtitle: "Overall scale applied to constant-force effects.";
-                                        minimum: 0;
-                                        maximum: 2;
-                                        value <=> root.const_magnitude;
+                                    Text {
+                                        text: "Set the bridge poll interval and steering input source here. Launching the bridge from this strip saves the profile first, then starts the runtime against that exact file.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
                                     }
 
-                                    FieldCard {
-                                        title: "Constant Maximum";
-                                        subtitle: "Cap for the strongest constant forces.";
-                                        minimum: 0;
-                                        maximum: 1;
-                                        value <=> root.const_maximum_force;
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Poll Interval";
+                                            subtitle: "Runtime loop cadence in milliseconds.";
+                                            minimum: 1;
+                                            maximum: 20;
+                                            step: 1;
+                                            value <=> root.poll_ms;
+                                        }
+
+                                        FieldCard {
+                                            title: "Steering Device";
+                                            subtitle: "Use -1 to leave it unset. Otherwise pick the WinMM device id for your wheel.";
+                                            minimum: -1;
+                                            maximum: 16;
+                                            step: 1;
+                                            value <=> root.steering_device;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.current_section == 1 : Rectangle {
+                                background: transparent;
+
+                                VerticalLayout {
+                                    spacing: 18px;
+
+                                    Text {
+                                        text: "Constant Force";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
                                     }
 
-                                    FieldCard {
-                                        title: "Constant Minimum";
-                                        subtitle: "Minimum force floor to avoid weak detail disappearing.";
-                                        minimum: 0;
-                                        maximum: 0.25;
-                                        value <=> root.const_minimum_force;
+                                    Text {
+                                        text: "These controls shape the heavy steering-load and impact-style forces. Start with magnitude and maximum force, then use the filter threshold only if center behavior still feels noisy.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
                                     }
 
-                                    FieldCard {
-                                        title: "Filter Threshold";
-                                        subtitle: "Threshold before steering-state filtering starts shaping forces.";
-                                        minimum: 0;
-                                        maximum: 1;
-                                        value <=> root.const_filter_threshold;
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Constant Magnitude";
+                                            subtitle: "Overall scale applied to constant-force effects.";
+                                            minimum: 0;
+                                            maximum: 2;
+                                            step: 0.05;
+                                            value <=> root.const_magnitude;
+                                        }
+
+                                        FieldCard {
+                                            title: "Constant Maximum";
+                                            subtitle: "Cap for the strongest constant forces.";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.const_maximum_force;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Constant Minimum";
+                                            subtitle: "Minimum force floor to keep lighter detail from disappearing.";
+                                            minimum: 0;
+                                            maximum: 0.25;
+                                            step: 0.01;
+                                            value <=> root.const_minimum_force;
+                                        }
+
+                                        FieldCard {
+                                            title: "Filter Threshold";
+                                            subtitle: "Threshold before steering-state filtering starts shaping the output.";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.const_filter_threshold;
+                                        }
                                     }
 
                                     FieldCard {
@@ -390,91 +718,160 @@ export component ProfileEditorWindow inherits Window {
                                         subtitle: "Lower bound for steering-state filtered constant forces.";
                                         minimum: 0;
                                         maximum: 1;
+                                        step: 0.02;
                                         value <=> root.const_minimum_coefficient;
                                     }
-
-                                    FieldCard {
-                                        title: "Spring Coefficient";
-                                        subtitle: "Centering strength applied to spring effects.";
-                                        minimum: 0;
-                                        maximum: 0.25;
-                                        value <=> root.spring_coefficient;
-                                    }
-
-                                    FieldCard {
-                                        title: "Spring Saturation";
-                                        subtitle: "Cap for spring saturation under heavy condition forces.";
-                                        minimum: 0;
-                                        maximum: 1;
-                                        value <=> root.spring_saturation;
-                                    }
                                 }
+                            }
+
+                            if root.current_section == 2 : Rectangle {
+                                background: transparent;
 
                                 VerticalLayout {
                                     spacing: 18px;
 
-                                    FieldCard {
-                                        title: "Sine Magnitude";
-                                        subtitle: "Overall amplitude of periodic vibration effects.";
-                                        minimum: 0;
-                                        maximum: 1.5;
-                                        value <=> root.sine_magnitude;
+                                    Text {
+                                        text: "Periodic And Vibration";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
                                     }
 
-                                    FieldCard {
-                                        title: "Sine Frequency Scale";
-                                        subtitle: "Global multiplier applied to periodic timing.";
-                                        minimum: 0.25;
-                                        maximum: 4;
-                                        value <=> root.sine_frequency;
+                                    Text {
+                                        text: "This section covers road texture, rumble, engine vibration, and gear-shift buzz. Use it for texture and energy, not heavy steering authority.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
                                     }
 
-                                    FieldCard {
-                                        title: "Sine Maximum";
-                                        subtitle: "Upper clamp for vibration amplitude.";
-                                        minimum: 0;
-                                        maximum: 1;
-                                        value <=> root.sine_maximum_force;
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Sine Magnitude";
+                                            subtitle: "Overall amplitude of periodic vibration effects.";
+                                            minimum: 0;
+                                            maximum: 1.5;
+                                            step: 0.05;
+                                            value <=> root.sine_magnitude;
+                                        }
+
+                                        FieldCard {
+                                            title: "Sine Frequency Scale";
+                                            subtitle: "Global multiplier applied to periodic timing.";
+                                            minimum: 0.25;
+                                            maximum: 4;
+                                            step: 0.05;
+                                            value <=> root.sine_frequency;
+                                        }
                                     }
 
-                                    FieldCard {
-                                        title: "Sine Phase";
-                                        subtitle: "Phase offset used when periodic effects are created.";
-                                        minimum: 0;
-                                        maximum: 1;
-                                        value <=> root.sine_phase;
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Sine Maximum";
+                                            subtitle: "Upper clamp for vibration amplitude.";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.sine_maximum_force;
+                                        }
+
+                                        FieldCard {
+                                            title: "Sine Phase";
+                                            subtitle: "Phase offset used when periodic effects are created.";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.sine_phase;
+                                        }
                                     }
 
-                                    FieldCard {
-                                        title: "Engine Vibration Strength";
-                                        subtitle: "Strength of the engine-vibration special case.";
-                                        minimum: 0;
-                                        maximum: 0.25;
-                                        value <=> root.engine_vibration_strength;
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Engine Vibration Strength";
+                                            subtitle: "Strength of the engine-vibration special case.";
+                                            minimum: 0;
+                                            maximum: 0.25;
+                                            step: 0.01;
+                                            value <=> root.engine_vibration_strength;
+                                        }
+
+                                        FieldCard {
+                                            title: "Gear Shift Strength";
+                                            subtitle: "Strength of the gear-shift vibration special case.";
+                                            minimum: 0;
+                                            maximum: 0.25;
+                                            step: 0.01;
+                                            value <=> root.gear_shift_strength;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.current_section == 3 : Rectangle {
+                                background: transparent;
+
+                                VerticalLayout {
+                                    spacing: 18px;
+
+                                    Text {
+                                        text: "Condition Forces";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
                                     }
 
-                                    FieldCard {
-                                        title: "Gear Shift Strength";
-                                        subtitle: "Strength of the gear-shift vibration special case.";
-                                        minimum: 0;
-                                        maximum: 0.25;
-                                        value <=> root.gear_shift_strength;
+                                    Text {
+                                        text: "Spring and damper settings shape centering, resistance, and how the wheel settles. These values matter most once the steering-device input is correct.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
                                     }
 
-                                    FieldCard {
-                                        title: "Damper Coefficient";
-                                        subtitle: "Resistance scaling used for damper effects.";
-                                        minimum: 0;
-                                        maximum: 0.25;
-                                        value <=> root.damper_coefficient;
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Spring Coefficient";
+                                            subtitle: "Centering strength applied to spring effects.";
+                                            minimum: 0;
+                                            maximum: 0.25;
+                                            step: 0.01;
+                                            value <=> root.spring_coefficient;
+                                        }
+
+                                        FieldCard {
+                                            title: "Spring Saturation";
+                                            subtitle: "Cap for spring saturation under heavy condition forces.";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.spring_saturation;
+                                        }
                                     }
 
-                                    FieldCard {
-                                        title: "Damper Saturation";
-                                        subtitle: "Cap for damping saturation during heavy load transitions.";
-                                        minimum: 0;
-                                        maximum: 1;
-                                        value <=> root.damper_saturation;
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Damper Coefficient";
+                                            subtitle: "Resistance scaling used for damper effects.";
+                                            minimum: 0;
+                                            maximum: 0.25;
+                                            step: 0.01;
+                                            value <=> root.damper_coefficient;
+                                        }
+
+                                        FieldCard {
+                                            title: "Damper Saturation";
+                                            subtitle: "Cap for damping saturation during heavy load transitions.";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.damper_saturation;
+                                        }
                                     }
                                 }
                             }
