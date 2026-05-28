@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn watcher_reports_no_change_when_timestamp_matches() {
         let temp_path = std::env::temp_dir().join(format!(
-            "forzabeast-profile-test-{}.json",
+            "Torquebridge-profile-test-{}.json",
             std::process::id()
         ));
         let profile = FfbProfile::from_ffb_settings(settings());
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn watcher_reloads_when_file_changes() {
         let temp_path = std::env::temp_dir().join(format!(
-            "forzabeast-profile-reload-test-{}.json",
+            "Torquebridge-profile-reload-test-{}.json",
             std::process::id()
         ));
         let mut profile = FfbProfile::from_ffb_settings(settings());

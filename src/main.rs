@@ -1,22 +1,22 @@
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
-use forzabeast::backends::directinput::DirectInput;
-use forzabeast::backends::ffbeast::{DirectControl, FFBeastBackend};
-use forzabeast::config::{ControllerConfig, FfbParamsConfig, load_controllers};
-use forzabeast::core::domain::{EffectMetadata, EffectUpdate, GameEffect};
-use forzabeast::effect_engine::EffectEngine;
-use forzabeast::frontends::forza_vjoy::{
-    InputFrame, InputMapper, RegisteredFfbCallback, VJoyDevice,
-};
-use forzabeast::inputs::WinmmJoystick;
-use forzabeast::profile::{FfbProfile, ProfileWatcher, load_profile};
-use forzabeast::ui::run_profile_editor;
 use std::thread;
 use std::time::Duration;
+use torquebridge::backends::directinput::DirectInput;
+use torquebridge::backends::ffbeast::{DirectControl, FFBeastBackend};
+use torquebridge::config::{ControllerConfig, FfbParamsConfig, load_controllers};
+use torquebridge::core::domain::{EffectMetadata, EffectUpdate, GameEffect};
+use torquebridge::effect_engine::EffectEngine;
+use torquebridge::frontends::forza_vjoy::{
+    InputFrame, InputMapper, RegisteredFfbCallback, VJoyDevice,
+};
+use torquebridge::inputs::WinmmJoystick;
+use torquebridge::profile::{FfbProfile, ProfileWatcher, load_profile};
+use torquebridge::ui::run_profile_editor;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "forzabeast",
+    name = "Torquebridge",
     about = "Native FFBeast HID probe for replacing vJoy/EmuWheel"
 )]
 struct Cli {
@@ -81,6 +81,8 @@ enum Command {
         config: String,
         #[arg(long)]
         profile: Option<String>,
+        #[arg(long)]
+        no_profile_watch: bool,
         #[arg(long, default_value_t = 1)]
         id: u32,
         #[arg(long)]
@@ -307,6 +309,7 @@ fn main() -> Result<()> {
         Command::FfbBridge {
             config,
             profile,
+            no_profile_watch,
             id,
             steering_device,
             poll_ms,
@@ -319,7 +322,11 @@ fn main() -> Result<()> {
             let mut steering_device =
                 effective_profile.resolved_steering_device(cli_steering_device);
             let mut poll_ms = effective_profile.resolved_poll_ms(cli_poll_ms, 5);
-            let mut profile_watcher = profile.as_deref().map(ProfileWatcher::new).transpose()?;
+            let mut profile_watcher = if no_profile_watch {
+                None
+            } else {
+                profile.as_deref().map(ProfileWatcher::new).transpose()?
+            };
 
             let vjoy = VJoyDevice::initialize(id)?;
             if !vjoy.is_ffb_capable() {
@@ -351,6 +358,8 @@ fn main() -> Result<()> {
                     "watching profile file {} for changes",
                     watcher.path().display()
                 );
+            } else if profile.is_some() && no_profile_watch {
+                println!("profile hot reload disabled for this bridge session");
             }
 
             print_steering_input_status(steering_input.as_ref());
@@ -488,7 +497,7 @@ fn print_steering_input_status(input: Option<&WinmmJoystick>) {
         );
     } else {
         println!(
-            "no live steering input selected; run 'forzabeast list-inputs' and pass --steering-device <id> to enable steering-state updates"
+            "no live steering input selected; run 'Torquebridge list-inputs' and pass --steering-device <id> to enable steering-state updates"
         );
     }
 }

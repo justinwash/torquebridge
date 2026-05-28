@@ -1,7 +1,8 @@
 {
   "Version": 1,
   "Name": "Baseline Compatibility Bridge",
-  "Notes": "Starting point extracted from the current Torquebridge configuration. SteeringDevice is intentionally left unset because the WinMM device id is machine-specific.",
+  "Notes": "Starting point",
+  "SteeringDevice": 0,
   "PollMs": 5,
   "FFBParameters": {
     "Const": {

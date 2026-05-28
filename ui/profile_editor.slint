@@ -129,6 +129,114 @@ component StatCard inherits Rectangle {
     }
 }
 
+component ToggleCard inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <bool> active: false;
+    callback pressed();
+
+    min-width: 320px;
+    min-height: 168px;
+    border-radius: 24px;
+    background: #121925;
+    border-color: active ? #d39a2d : #1d2533;
+    border-width: 1px;
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+
+        Text {
+            text: title;
+            color: #f6f8fb;
+            font-size: 17px;
+            font-weight: 700;
+        }
+
+        Text {
+            text: subtitle;
+            color: #7f8aa0;
+            font-size: 13px;
+        }
+
+        Rectangle {
+            height: 1px;
+            background: #1d2533;
+        }
+
+        HorizontalLayout {
+            spacing: 12px;
+
+            Text {
+                text: active ? "Enabled" : "Disabled";
+                color: active ? #fff4d8 : #dfe7f5;
+                font-size: 15px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+
+            Rectangle { }
+
+            ActionButton {
+                width: 116px;
+                primary: active;
+                label: active ? "Turn Off" : "Turn On";
+                pressed => {
+                    root.pressed();
+                }
+            }
+        }
+    }
+}
+
+component DeviceOption inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback pressed();
+
+    height: 54px;
+    border-radius: 18px;
+    background: selected ? #182233 : #101722;
+    border-color: selected ? #d39a2d : #1d2533;
+    border-width: 1px;
+
+    HorizontalLayout {
+        padding: 14px;
+        spacing: 12px;
+
+        Rectangle {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: selected ? #d39a2d : #314058;
+        }
+
+        Text {
+            text: label;
+            color: #eef3ff;
+            font-size: 14px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+
+        Rectangle { }
+
+        Text {
+            text: selected ? "Selected" : "";
+            color: #d39a2d;
+            font-size: 12px;
+            font-weight: 800;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.pressed();
+        }
+    }
+}
+
 component FieldCard inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
@@ -216,8 +324,14 @@ export component ProfileEditorWindow inherits Window {
     in-out property <string> runtime_poll_summary;
     in-out property <string> steering_device_summary;
     in-out property <string> hot_reload_summary;
+    in-out property <string> selected_steering_device_label;
+    in property <[string]> steering_device_options;
+    in-out property <string> device_catalog_message;
     in-out property <bool> bridge_running;
+    in-out property <bool> hot_reload_enabled: true;
+    in-out property <bool> close_to_taskbar_enabled: false;
     in-out property <int> current_section: 0;
+    in-out property <int> selected_steering_device_index: -1;
     in-out property <float> poll_ms;
     in-out property <float> steering_device;
     in-out property <float> const_magnitude;
@@ -239,12 +353,17 @@ export component ProfileEditorWindow inherits Window {
     callback save_requested();
     callback start_bridge_requested();
     callback stop_bridge_requested();
+    callback select_steering_device_requested(int);
+    callback clear_steering_device_requested();
+    callback toggle_hot_reload_requested();
+    callback toggle_close_to_taskbar_requested();
+    callback quit_and_shutdown_requested();
 
     preferred-width: 1500px;
     preferred-height: 940px;
     min-width: 1260px;
     min-height: 840px;
-    title: "forzabeast Profile Studio";
+    title: "Torquebridge Profile Studio";
     background: #080b11;
 
     Rectangle {
@@ -266,7 +385,7 @@ export component ProfileEditorWindow inherits Window {
                     spacing: 16px;
 
                     Text {
-                        text: "forzabeast";
+                        text: "Torquebridge";
                         color: #ffffff;
                         font-size: 28px;
                         font-weight: 800;
@@ -285,8 +404,8 @@ export component ProfileEditorWindow inherits Window {
 
                     NavCard { label: "Force Profile"; tag: "FX"; selected: true; }
                     NavCard { label: "Bridge Runtime"; tag: "RT"; }
-                    NavCard { label: "Telemetry"; tag: "TM"; }
-                    NavCard { label: "Packaging"; tag: "PK"; }
+                    NavCard { label: "Settings"; tag: "ST"; }
+                    NavCard { label: "Release"; tag: "RL"; }
 
                     Rectangle { }
 
@@ -309,7 +428,7 @@ export component ProfileEditorWindow inherits Window {
                             }
 
                             Text {
-                                text: "This Slint shell edits the same profile JSON the bridge watches live. It is the first real presentation layer, not a throwaway admin tool.";
+                                text: "Live profile editor for the bridge.";
                                 color: #8390a7;
                                 font-size: 13px;
                             }
@@ -605,6 +724,14 @@ export component ProfileEditorWindow inherits Window {
                                         root.current_section = 3;
                                     }
                                 }
+
+                                SegmentButton {
+                                    label: "Settings";
+                                    selected: root.current_section == 4;
+                                    pressed => {
+                                        root.current_section = 4;
+                                    }
+                                }
                             }
 
                             if root.current_section == 0 : Rectangle {
@@ -621,7 +748,7 @@ export component ProfileEditorWindow inherits Window {
                                     }
 
                                     Text {
-                                        text: "Set the bridge poll interval and steering input source here. Launching the bridge from this strip saves the profile first, then starts the runtime against that exact file.";
+                                        text: "Pick input, poll rate, and launch mode.";
                                         color: #7f8aa0;
                                         font-size: 14px;
                                     }
@@ -638,13 +765,102 @@ export component ProfileEditorWindow inherits Window {
                                             value <=> root.poll_ms;
                                         }
 
-                                        FieldCard {
-                                            title: "Steering Device";
-                                            subtitle: "Use -1 to leave it unset. Otherwise pick the WinMM device id for your wheel.";
-                                            minimum: -1;
-                                            maximum: 16;
-                                            step: 1;
-                                            value <=> root.steering_device;
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 168px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 12px;
+
+                                                Text {
+                                                    text: "Selected Device";
+                                                    color: #f6f8fb;
+                                                    font-size: 17px;
+                                                    font-weight: 700;
+                                                }
+
+                                                Text {
+                                                    text: "Choose by name, not raw WinMM id.";
+                                                    color: #7f8aa0;
+                                                    font-size: 13px;
+                                                }
+
+                                                Rectangle {
+                                                    border-radius: 14px;
+                                                    background: #0c1118;
+                                                    border-color: #1f2735;
+                                                    border-width: 1px;
+                                                    height: 42px;
+
+                                                    Text {
+                                                        text: selected_steering_device_label;
+                                                        color: #e1e7f4;
+                                                        font-size: 15px;
+                                                        font-weight: 700;
+                                                        horizontal-alignment: center;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+
+                                                HorizontalLayout {
+                                                    spacing: 12px;
+
+                                                    ActionButton {
+                                                        width: 148px;
+                                                        label: "Clear Selection";
+                                                        pressed => {
+                                                            root.clear_steering_device_requested();
+                                                        }
+                                                    }
+
+                                                    Rectangle { }
+
+                                                    Text {
+                                                        text: steering_device_summary;
+                                                        color: #8d96a8;
+                                                        font-size: 13px;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        border-radius: 24px;
+                                        background: #121925;
+                                        border-color: #1d2533;
+                                        border-width: 1px;
+
+                                        VerticalLayout {
+                                            padding: 18px;
+                                            spacing: 12px;
+
+                                            Text {
+                                                text: "Available Devices";
+                                                color: #f6f8fb;
+                                                font-size: 17px;
+                                                font-weight: 700;
+                                            }
+
+                                            Text {
+                                                text: device_catalog_message;
+                                                color: #7f8aa0;
+                                                font-size: 13px;
+                                                visible: device_catalog_message != "";
+                                            }
+
+                                            for device[index] in root.steering_device_options : DeviceOption {
+                                                label: device;
+                                                selected: root.selected_steering_device_index == index;
+                                                pressed => {
+                                                    root.select_steering_device_requested(index);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -871,6 +1087,98 @@ export component ProfileEditorWindow inherits Window {
                                             maximum: 1;
                                             step: 0.02;
                                             value <=> root.damper_saturation;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.current_section == 4 : Rectangle {
+                                background: transparent;
+
+                                VerticalLayout {
+                                    spacing: 18px;
+
+                                    Text {
+                                        text: "Settings";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
+                                    }
+
+                                    Text {
+                                        text: "Bridge launch and window behavior.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        ToggleCard {
+                                            title: "Hot Reload";
+                                            subtitle: "Watch saved profile changes while the bridge runs.";
+                                            active: hot_reload_enabled;
+                                            pressed => {
+                                                root.toggle_hot_reload_requested();
+                                            }
+                                        }
+
+                                        ToggleCard {
+                                            title: "Close To Taskbar";
+                                            subtitle: "Closing the window minimizes it instead of exiting.";
+                                            active: close_to_taskbar_enabled;
+                                            pressed => {
+                                                root.toggle_close_to_taskbar_requested();
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        border-radius: 24px;
+                                        background: #121925;
+                                        border-color: #1d2533;
+                                        border-width: 1px;
+                                        min-height: 148px;
+
+                                        VerticalLayout {
+                                            padding: 18px;
+                                            spacing: 12px;
+
+                                            Text {
+                                                text: "Shutdown";
+                                                color: #f6f8fb;
+                                                font-size: 17px;
+                                                font-weight: 700;
+                                            }
+
+                                            Text {
+                                                text: "Quit the editor and stop the bridge first.";
+                                                color: #7f8aa0;
+                                                font-size: 13px;
+                                            }
+
+                                            HorizontalLayout {
+                                                spacing: 14px;
+
+                                                ActionButton {
+                                                    width: 236px;
+                                                    primary: false;
+                                                    label: "Quit And Shut Down Bridge";
+                                                    pressed => {
+                                                        root.quit_and_shutdown_requested();
+                                                    }
+                                                }
+
+                                                Rectangle { }
+
+                                                Text {
+                                                    text: bridge_running ? "Bridge running." : "Bridge stopped.";
+                                                    color: #dfe7f5;
+                                                    font-size: 14px;
+                                                    font-weight: 600;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
                                         }
                                     }
                                 }

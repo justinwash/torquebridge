@@ -1156,7 +1156,7 @@ mod imp {
         fn create() -> Result<Self, DirectInputError> {
             let module = unsafe { GetModuleHandleW(null()) };
             let class_name = wide_null("STATIC");
-            let title = wide_null("forzabeast-directinput");
+            let title = wide_null("Torquebridge-directinput");
             let hwnd = unsafe {
                 CreateWindowExW(
                     0,

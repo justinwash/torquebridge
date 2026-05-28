@@ -1,8 +1,13 @@
 use crate::config::{ControllerConfig, FfbParamsConfig, load_controllers};
+use crate::inputs::{WinmmDeviceInfo, WinmmJoystick};
 use crate::profile::{FfbProfile, load_profile, save_profile};
 use anyhow::{Context, Result, anyhow};
-use slint::{ComponentHandle, SharedString, Timer, TimerMode};
+use serde::{Deserialize, Serialize};
+use slint::{
+    CloseRequestResponse, ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel,
+};
 use std::cell::RefCell;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::rc::Rc;
@@ -160,6 +165,182 @@ impl ProfileEditorState {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+struct EditorSettings {
+    hot_reload_enabled: bool,
+    close_to_taskbar_enabled: bool,
+}
+
+impl Default for EditorSettings {
+    fn default() -> Self {
+        Self {
+            hot_reload_enabled: true,
+            close_to_taskbar_enabled: false,
+        }
+    }
+}
+
+impl EditorSettings {
+    fn apply_to_window(&self, window: &ProfileEditorWindow) {
+        window.set_hot_reload_enabled(self.hot_reload_enabled);
+        window.set_close_to_taskbar_enabled(self.close_to_taskbar_enabled);
+    }
+
+    fn from_window(window: &ProfileEditorWindow) -> Self {
+        Self {
+            hot_reload_enabled: window.get_hot_reload_enabled(),
+            close_to_taskbar_enabled: window.get_close_to_taskbar_enabled(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct DeviceCatalog {
+    devices: Vec<WinmmDeviceInfo>,
+    load_error: Option<String>,
+}
+
+impl DeviceCatalog {
+    fn load() -> Self {
+        match WinmmJoystick::list_devices() {
+            Ok(devices) => Self {
+                devices,
+                load_error: None,
+            },
+            Err(error) => Self {
+                devices: Vec::new(),
+                load_error: Some(error.to_string()),
+            },
+        }
+    }
+
+    fn model(&self) -> ModelRc<SharedString> {
+        ModelRc::new(VecModel::from(
+            self.devices
+                .iter()
+                .map(|device| SharedString::from(format!("#{} {}", device.id, device.name)))
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    fn empty_message(&self) -> SharedString {
+        if self.devices.is_empty() {
+            SharedString::from(
+                self.load_error
+                    .as_ref()
+                    .map(|error| format!("Device names unavailable: {error}"))
+                    .unwrap_or_else(|| "No WinMM devices found.".to_string()),
+            )
+        } else {
+            SharedString::from("")
+        }
+    }
+
+    fn selected_index(&self, device_id: Option<u32>) -> i32 {
+        device_id
+            .and_then(|id| self.devices.iter().position(|device| device.id == id))
+            .map(|index| index as i32)
+            .unwrap_or(-1)
+    }
+
+    fn device_id_for_index(&self, index: i32) -> Option<u32> {
+        usize::try_from(index)
+            .ok()
+            .and_then(|row| self.devices.get(row))
+            .map(|device| device.id)
+    }
+
+    fn label_for_device(&self, device_id: Option<u32>) -> String {
+        match device_id {
+            None => "No steering device".to_string(),
+            Some(id) => self
+                .devices
+                .iter()
+                .find(|device| device.id == id)
+                .map(|device| format!("#{} {}", device.id, device.name))
+                .unwrap_or_else(|| format!("#{} (not found)", id)),
+        }
+    }
+}
+
+fn selected_steering_device(window: &ProfileEditorWindow) -> Option<u32> {
+    let steering_device = window.get_steering_device().round() as i32;
+    (steering_device >= 0).then_some(steering_device as u32)
+}
+
+fn hot_reload_summary(enabled: bool) -> &'static str {
+    if enabled { "On save" } else { "Manual" }
+}
+
+fn editor_settings_path() -> Result<PathBuf> {
+    if let Some(base_dir) = std::env::var_os("APPDATA").or_else(|| std::env::var_os("LOCALAPPDATA"))
+    {
+        return Ok(PathBuf::from(base_dir)
+            .join("Torquebridge")
+            .join("editor-settings.json"));
+    }
+
+    Ok(std::env::current_dir()
+        .context("failed to resolve current directory for editor settings")?
+        .join(".torquebridge-editor-settings.json"))
+}
+
+fn load_editor_settings(path: &Path) -> (EditorSettings, Option<String>) {
+    match fs::read_to_string(path) {
+        Ok(json) => {
+            match serde_json::from_str::<EditorSettings>(json.trim_start_matches('\u{feff}')) {
+                Ok(settings) => (settings, None),
+                Err(_) => (
+                    EditorSettings::default(),
+                    Some("Editor settings reset to defaults.".to_string()),
+                ),
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            (EditorSettings::default(), None)
+        }
+        Err(_) => (
+            EditorSettings::default(),
+            Some("Editor settings unavailable; using defaults.".to_string()),
+        ),
+    }
+}
+
+fn save_editor_settings(path: &Path, settings: &EditorSettings) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).context("failed to create editor settings directory")?;
+    }
+
+    let json =
+        serde_json::to_string_pretty(settings).context("failed to serialize editor settings")?;
+    fs::write(path, format!("{json}\n")).context("failed to write editor settings")?;
+    Ok(())
+}
+
+fn save_window_editor_settings(
+    window: &ProfileEditorWindow,
+    editor_settings: &RefCell<EditorSettings>,
+    path: &Path,
+) -> Result<EditorSettings> {
+    let settings = EditorSettings::from_window(window);
+    save_editor_settings(path, &settings)?;
+    *editor_settings.borrow_mut() = settings.clone();
+    Ok(settings)
+}
+
+fn initial_status_message(
+    settings_notice: Option<String>,
+    device_catalog: &DeviceCatalog,
+) -> String {
+    match (settings_notice, device_catalog.load_error.as_ref()) {
+        (Some(settings_notice), Some(_)) => format!("{settings_notice} Device names unavailable."),
+        (Some(settings_notice), None) => settings_notice,
+        (None, Some(_)) => "Save writes the profile. Device names unavailable.".to_string(),
+        (None, None) => "Save writes the profile.".to_string(),
+    }
+}
+
 #[derive(Debug)]
 struct BridgeController {
     config_path: String,
@@ -174,8 +355,7 @@ impl BridgeController {
             config_path,
             profile_path,
             child: None,
-            detail: "Bridge is idle. Save the profile, then launch it from the runtime strip."
-                .to_string(),
+            detail: "Idle.".to_string(),
         }
     }
 
@@ -195,9 +375,9 @@ impl BridgeController {
         &self.detail
     }
 
-    fn start(&mut self) -> Result<()> {
+    fn start(&mut self, hot_reload_enabled: bool) -> Result<()> {
         if self.child.is_some() {
-            self.detail = "Bridge is already running from this editor session.".to_string();
+            self.detail = "Already running.".to_string();
             return Ok(());
         }
 
@@ -213,6 +393,10 @@ impl BridgeController {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
 
+        if !hot_reload_enabled {
+            command.arg("--no-profile-watch");
+        }
+
         #[cfg(windows)]
         {
             command.creation_flags(CREATE_NO_WINDOW);
@@ -221,9 +405,11 @@ impl BridgeController {
         let child = command.spawn().context("failed to launch bridge process")?;
         let pid = child.id();
         self.child = Some(child);
-        self.detail = format!(
-            "Bridge running with PID {pid}. Saving the profile will hot reload the live runtime."
-        );
+        self.detail = if hot_reload_enabled {
+            format!("PID {pid}. Hot reload on.")
+        } else {
+            format!("PID {pid}. Hot reload off.")
+        };
         Ok(())
     }
 
@@ -232,9 +418,9 @@ impl BridgeController {
             let pid = child.id();
             child.kill().context("failed to stop bridge process")?;
             let _ = child.wait();
-            self.detail = format!("Bridge stopped. Last PID was {pid}.");
+            self.detail = format!("Stopped PID {pid}.");
         } else {
-            self.detail = "Bridge is already stopped.".to_string();
+            self.detail = "Already stopped.".to_string();
         }
         Ok(())
     }
@@ -246,7 +432,7 @@ impl BridgeController {
 
         if let Some(status) = child.try_wait().context("failed to poll bridge process")? {
             self.child = None;
-            self.detail = format!("Bridge exited with status {status}.");
+            self.detail = format!("Exited: {status}.");
             return Ok(Some(self.detail.clone()));
         }
 
@@ -259,21 +445,46 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
     let window = ProfileEditorWindow::new().context("failed to create Slint profile editor")?;
     let profile_state = Rc::new(RefCell::new(profile));
     let path = Rc::new(target_path);
+    let settings_path = Rc::new(editor_settings_path()?);
+    let (loaded_editor_settings, settings_notice) = load_editor_settings(settings_path.as_path());
+    let editor_settings = Rc::new(RefCell::new(loaded_editor_settings));
+    let device_catalog = Rc::new(DeviceCatalog::load());
     let bridge_controller = Rc::new(RefCell::new(BridgeController::new(
         config_path.to_string(),
         (*path).clone(),
     )));
 
     ProfileEditorState::from(&*profile_state.borrow()).apply_to_window(&window, path.as_path());
-    window.set_status_message(SharedString::from(
-        "Saving writes the profile file immediately. The running bridge will hot reload it.",
-    ));
-    refresh_runtime_summaries(&window);
+    editor_settings.borrow().apply_to_window(&window);
+    window.set_steering_device_options(device_catalog.model());
+    window.set_device_catalog_message(device_catalog.empty_message());
+    window.set_status_message(SharedString::from(initial_status_message(
+        settings_notice,
+        device_catalog.as_ref(),
+    )));
+    refresh_runtime_summaries(&window, device_catalog.as_ref());
     sync_bridge_panel(&window, &bridge_controller.borrow());
+
+    let weak_window = window.as_weak();
+    window.window().on_close_requested(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return CloseRequestResponse::HideWindow;
+        };
+
+        if window.get_close_to_taskbar_enabled() {
+            window.window().set_minimized(true);
+            window.set_status_message(SharedString::from("Window minimized to taskbar."));
+            CloseRequestResponse::KeepWindowShown
+        } else {
+            CloseRequestResponse::HideWindow
+        }
+    });
 
     let weak_window = window.as_weak();
     let profile_state_handle = Rc::clone(&profile_state);
     let path_handle = Rc::clone(&path);
+    let bridge_controller_handle = Rc::clone(&bridge_controller);
+    let device_catalog_handle = Rc::clone(&device_catalog);
     window.on_save_requested(move || {
         let Some(window) = weak_window.upgrade() else {
             return;
@@ -281,10 +492,19 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
 
         match save_window_profile(&window, &profile_state_handle, path_handle.as_path()) {
             Ok(_) => {
-                refresh_runtime_summaries(&window);
-                window.set_status_message(SharedString::from(
-                    "Profile saved. ffb-bridge will apply the changes automatically.",
-                ));
+                refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
+
+                let bridge_running = bridge_controller_handle.borrow().is_running();
+                let message = if bridge_running {
+                    if window.get_hot_reload_enabled() {
+                        "Saved. Bridge will reload."
+                    } else {
+                        "Saved. Restart bridge to apply."
+                    }
+                } else {
+                    "Profile saved."
+                };
+                window.set_status_message(SharedString::from(message));
             }
             Err(error) => {
                 window.set_status_message(SharedString::from(format!("Save failed: {error}")));
@@ -296,29 +516,36 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
     let profile_state_handle = Rc::clone(&profile_state);
     let path_handle = Rc::clone(&path);
     let bridge_controller_handle = Rc::clone(&bridge_controller);
+    let device_catalog_handle = Rc::clone(&device_catalog);
     window.on_start_bridge_requested(move || {
         let Some(window) = weak_window.upgrade() else {
             return;
         };
 
-        if let Err(error) = save_window_profile(&window, &profile_state_handle, path_handle.as_path()) {
+        if let Err(error) =
+            save_window_profile(&window, &profile_state_handle, path_handle.as_path())
+        {
             window.set_status_message(SharedString::from(format!("Save failed: {error}")));
             return;
         }
 
-        refresh_runtime_summaries(&window);
+        refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
 
         let mut bridge_controller = bridge_controller_handle.borrow_mut();
-        match bridge_controller.start() {
+        match bridge_controller.start(window.get_hot_reload_enabled()) {
             Ok(()) => {
                 sync_bridge_panel(&window, &bridge_controller);
-                window.set_status_message(SharedString::from(
-                    "Bridge launched from the UI. Further saves will hot reload the running process.",
-                ));
+                window.set_status_message(SharedString::from(if window.get_hot_reload_enabled() {
+                    "Bridge started. Hot reload on."
+                } else {
+                    "Bridge started. Hot reload off."
+                }));
             }
             Err(error) => {
                 sync_bridge_panel(&window, &bridge_controller);
-                window.set_status_message(SharedString::from(format!("Bridge launch failed: {error}")));
+                window.set_status_message(SharedString::from(format!(
+                    "Bridge launch failed: {error}"
+                )));
             }
         }
     });
@@ -334,14 +561,140 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
         match bridge_controller.stop() {
             Ok(()) => {
                 sync_bridge_panel(&window, &bridge_controller);
-                window.set_status_message(SharedString::from(
-                    "Bridge stopped from the runtime strip.",
-                ));
+                window.set_status_message(SharedString::from("Bridge stopped."));
             }
             Err(error) => {
                 sync_bridge_panel(&window, &bridge_controller);
                 window
                     .set_status_message(SharedString::from(format!("Bridge stop failed: {error}")));
+            }
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let device_catalog_handle = Rc::clone(&device_catalog);
+    window.on_select_steering_device_requested(move |index| {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+
+        let Some(device_id) = device_catalog_handle.device_id_for_index(index) else {
+            return;
+        };
+
+        window.set_steering_device(device_id as f32);
+        refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
+        window.set_status_message(SharedString::from(format!(
+            "Selected {}.",
+            device_catalog_handle.label_for_device(Some(device_id))
+        )));
+    });
+
+    let weak_window = window.as_weak();
+    let device_catalog_handle = Rc::clone(&device_catalog);
+    window.on_clear_steering_device_requested(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+
+        window.set_steering_device(-1.0);
+        refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
+        window.set_status_message(SharedString::from("Steering input cleared."));
+    });
+
+    let weak_window = window.as_weak();
+    let bridge_controller_handle = Rc::clone(&bridge_controller);
+    let device_catalog_handle = Rc::clone(&device_catalog);
+    let editor_settings_handle = Rc::clone(&editor_settings);
+    let settings_path_handle = Rc::clone(&settings_path);
+    window.on_toggle_hot_reload_requested(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+
+        let enabled = !window.get_hot_reload_enabled();
+        window.set_hot_reload_enabled(enabled);
+
+        if let Err(error) = save_window_editor_settings(
+            &window,
+            &editor_settings_handle,
+            settings_path_handle.as_path(),
+        ) {
+            window.set_hot_reload_enabled(!enabled);
+            refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
+            window.set_status_message(SharedString::from(format!(
+                "Failed to save settings: {error}"
+            )));
+            return;
+        }
+
+        refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
+
+        let message = if bridge_controller_handle.borrow().is_running() {
+            if enabled {
+                "Hot reload on. Restart bridge."
+            } else {
+                "Hot reload off. Restart bridge."
+            }
+        } else if enabled {
+            "Hot reload on."
+        } else {
+            "Hot reload off."
+        };
+        window.set_status_message(SharedString::from(message));
+    });
+
+    let weak_window = window.as_weak();
+    let editor_settings_handle = Rc::clone(&editor_settings);
+    let settings_path_handle = Rc::clone(&settings_path);
+    window.on_toggle_close_to_taskbar_requested(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+
+        let enabled = !window.get_close_to_taskbar_enabled();
+        window.set_close_to_taskbar_enabled(enabled);
+
+        if let Err(error) = save_window_editor_settings(
+            &window,
+            &editor_settings_handle,
+            settings_path_handle.as_path(),
+        ) {
+            window.set_close_to_taskbar_enabled(!enabled);
+            window.set_status_message(SharedString::from(format!(
+                "Failed to save settings: {error}"
+            )));
+            return;
+        }
+
+        window.set_status_message(SharedString::from(if enabled {
+            "Close now minimizes to taskbar."
+        } else {
+            "Close now exits Torquebridge."
+        }));
+    });
+
+    let weak_window = window.as_weak();
+    let bridge_controller_handle = Rc::clone(&bridge_controller);
+    window.on_quit_and_shutdown_requested(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+
+        let stop_result = {
+            let mut bridge_controller = bridge_controller_handle.borrow_mut();
+            let result = bridge_controller.stop();
+            sync_bridge_panel(&window, &bridge_controller);
+            result
+        };
+
+        match stop_result {
+            Ok(()) => {
+                window.set_status_message(SharedString::from("Shutting down Torquebridge."));
+                let _ = window.hide();
+            }
+            Err(error) => {
+                window.set_status_message(SharedString::from(format!("Shutdown failed: {error}")));
             }
         }
     });
@@ -422,22 +775,21 @@ fn save_window_profile(
     Ok(updated)
 }
 
-fn refresh_runtime_summaries(window: &ProfileEditorWindow) {
-    let steering_device = window.get_steering_device().round() as i32;
-    let steering_summary = if steering_device < 0 {
-        "No steering device selected".to_string()
-    } else {
-        format!("WinMM device {steering_device}")
-    };
+fn refresh_runtime_summaries(window: &ProfileEditorWindow, device_catalog: &DeviceCatalog) {
+    let steering_summary = device_catalog.label_for_device(selected_steering_device(window));
 
     window.set_runtime_poll_summary(SharedString::from(format!(
         "{} ms",
         window.get_poll_ms().round() as i32
     )));
+    window.set_selected_steering_device_index(
+        device_catalog.selected_index(selected_steering_device(window)),
+    );
+    window.set_selected_steering_device_label(SharedString::from(steering_summary.clone()));
     window.set_steering_device_summary(SharedString::from(steering_summary));
-    window.set_hot_reload_summary(SharedString::from(
-        "Saving updates the JSON file and the live bridge can hot reload it.",
-    ));
+    window.set_hot_reload_summary(SharedString::from(hot_reload_summary(
+        window.get_hot_reload_enabled(),
+    )));
 }
 
 fn sync_bridge_panel(window: &ProfileEditorWindow, bridge_controller: &BridgeController) {
@@ -450,6 +802,15 @@ fn sync_bridge_panel(window: &ProfileEditorWindow, bridge_controller: &BridgeCon
 mod tests {
     use super::*;
     use crate::config::{ConditionFfbConfig, ConstFfbConfig, PeriodicFfbConfig, VibrationConfig};
+
+    fn device(id: u32, name: &str) -> WinmmDeviceInfo {
+        WinmmDeviceInfo {
+            id,
+            name: name.to_string(),
+            axis_count: 4,
+            button_count: 8,
+        }
+    }
 
     fn profile() -> FfbProfile {
         FfbProfile {
@@ -522,5 +883,33 @@ mod tests {
         assert_eq!(restored.steering_device, None);
         assert_eq!(restored.ffb_parameters.r#const.magnitude, 2.0);
         assert_eq!(restored.ffb_parameters.damper.saturation, 0.0);
+    }
+
+    #[test]
+    fn device_catalog_uses_names_for_selected_device() {
+        let catalog = DeviceCatalog {
+            devices: vec![device(0, "FFBeast Wheel"), device(2, "Gamepad")],
+            load_error: None,
+        };
+
+        assert_eq!(catalog.selected_index(Some(2)), 1);
+        assert_eq!(catalog.selected_index(Some(7)), -1);
+        assert_eq!(catalog.label_for_device(Some(0)), "#0 FFBeast Wheel");
+        assert_eq!(catalog.label_for_device(None), "No steering device");
+        assert_eq!(hot_reload_summary(true), "On save");
+        assert_eq!(hot_reload_summary(false), "Manual");
+    }
+
+    #[test]
+    fn editor_settings_round_trip_json() {
+        let settings = EditorSettings {
+            hot_reload_enabled: false,
+            close_to_taskbar_enabled: true,
+        };
+
+        let json = serde_json::to_string(&settings).expect("serialize settings");
+        let restored: EditorSettings = serde_json::from_str(&json).expect("deserialize settings");
+
+        assert_eq!(restored, settings);
     }
 }
