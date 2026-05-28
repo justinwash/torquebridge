@@ -5,8 +5,8 @@ mod imp {
     use crate::config::ControllerConfig;
     use crate::core::domain::{ConditionCommand, DeviceControlCommand, EffectKind, WheelCommand};
     use libloading::Library;
-    use std::ffi::OsString;
     use std::ffi::c_void;
+    use std::ffi::OsString;
     use std::mem::{size_of, zeroed};
     use std::os::windows::ffi::OsStringExt;
     use std::ptr::{null, null_mut};

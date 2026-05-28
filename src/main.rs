@@ -1,17 +1,17 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use std::thread;
 use std::time::Duration;
 use torquebridge::backends::directinput::DirectInput;
 use torquebridge::backends::ffbeast::{DirectControl, FFBeastBackend};
-use torquebridge::config::{ControllerConfig, FfbParamsConfig, load_controllers};
+use torquebridge::config::{load_controllers, ControllerConfig, FfbParamsConfig};
 use torquebridge::core::domain::{EffectMetadata, EffectUpdate, GameEffect};
 use torquebridge::effect_engine::EffectEngine;
 use torquebridge::frontends::forza_vjoy::{
     InputFrame, InputMapper, RegisteredFfbCallback, VJoyDevice,
 };
 use torquebridge::inputs::WinmmJoystick;
-use torquebridge::profile::{FfbProfile, ProfileWatcher, load_profile};
+use torquebridge::profile::{load_profile, FfbProfile, ProfileWatcher};
 use torquebridge::ui::run_profile_editor;
 
 #[derive(Debug, Parser)]
