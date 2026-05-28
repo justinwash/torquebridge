@@ -1,4 +1,10 @@
+use crate::backends::directinput::DirectInput;
 use crate::config::{ControllerConfig, FfbParamsConfig, load_controllers};
+use crate::core::domain::{DeviceControlCommand, WheelCommand};
+use crate::diagnostics::{
+    BridgeDiagnosticEvent, DiagnosticCategory, DiagnosticField, DiagnosticLevel, DiagnosticsLog,
+    format_event,
+};
 use crate::inputs::{WinmmDeviceInfo, WinmmJoystick};
 use crate::profile::{FfbProfile, load_profile, save_profile};
 use anyhow::{Context, Result, anyhow};
@@ -20,6 +26,9 @@ slint::include_modules!();
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+const DIAGNOSTIC_EVENT_LIMIT: usize = 48;
+const OBSERVABILITY_EVENT_LIMIT: usize = 128;
 
 #[derive(Debug, Clone, PartialEq)]
 struct ProfileEditorState {
@@ -216,12 +225,13 @@ impl DeviceCatalog {
     }
 
     fn model(&self) -> ModelRc<SharedString> {
-        ModelRc::new(VecModel::from(
+        let mut options = vec![SharedString::from("No steering device")];
+        options.extend(
             self.devices
                 .iter()
-                .map(|device| SharedString::from(format!("#{} {}", device.id, device.name)))
-                .collect::<Vec<_>>(),
-        ))
+                .map(|device| SharedString::from(Self::device_label(device))),
+        );
+        ModelRc::new(VecModel::from(options))
     }
 
     fn empty_message(&self) -> SharedString {
@@ -240,15 +250,17 @@ impl DeviceCatalog {
     fn selected_index(&self, device_id: Option<u32>) -> i32 {
         device_id
             .and_then(|id| self.devices.iter().position(|device| device.id == id))
-            .map(|index| index as i32)
-            .unwrap_or(-1)
+            .map(|index| index as i32 + 1)
+            .unwrap_or(0)
     }
 
     fn device_id_for_index(&self, index: i32) -> Option<u32> {
-        usize::try_from(index)
-            .ok()
-            .and_then(|row| self.devices.get(row))
-            .map(|device| device.id)
+        let row = usize::try_from(index).ok()?;
+        if row == 0 {
+            return None;
+        }
+
+        self.devices.get(row - 1).map(|device| device.id)
     }
 
     fn label_for_device(&self, device_id: Option<u32>) -> String {
@@ -258,10 +270,269 @@ impl DeviceCatalog {
                 .devices
                 .iter()
                 .find(|device| device.id == id)
-                .map(|device| format!("#{} {}", device.id, device.name))
-                .unwrap_or_else(|| format!("#{} (not found)", id)),
+                .map(Self::device_label)
+                .unwrap_or_else(|| format!("WinMM #{} (not found)", id)),
         }
     }
+
+    fn device_label(device: &WinmmDeviceInfo) -> String {
+        format!("{} [WinMM #{}]", device.name, device.id)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ObservabilitySource {
+    Live,
+    Replay(PathBuf),
+}
+
+#[derive(Debug, Clone)]
+struct ObservabilityController {
+    live_log: DiagnosticsLog,
+    source: ObservabilitySource,
+}
+
+impl ObservabilityController {
+    fn new(live_log: DiagnosticsLog) -> Self {
+        Self {
+            live_log,
+            source: ObservabilitySource::Live,
+        }
+    }
+
+    fn current_log(&self) -> DiagnosticsLog {
+        match &self.source {
+            ObservabilitySource::Live => self.live_log.clone(),
+            ObservabilitySource::Replay(path) => DiagnosticsLog::new(path),
+        }
+    }
+
+    fn source_label(&self) -> String {
+        match &self.source {
+            ObservabilitySource::Live => "Source: live session log".to_string(),
+            ObservabilitySource::Replay(path) => {
+                format!("Source: replaying {}", replay_source_label(path))
+            }
+        }
+    }
+
+    fn export_live_session(&self) -> Result<PathBuf> {
+        self.live_log.export_session()
+    }
+
+    fn replay_latest_session(&mut self) -> Result<PathBuf> {
+        let replay_path = match self.live_log.latest_exported_session() {
+            Ok(path) => path,
+            Err(_) => self.live_log.export_session()?,
+        };
+        self.source = ObservabilitySource::Replay(replay_path.clone());
+        Ok(replay_path)
+    }
+
+    fn return_to_live(&mut self) -> bool {
+        let was_replaying = matches!(self.source, ObservabilitySource::Replay(_));
+        self.source = ObservabilitySource::Live;
+        was_replaying
+    }
+}
+
+fn replay_source_label(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TelemetryPanelView {
+    status: String,
+    uptime: String,
+    packet_rate: String,
+    command_rate: String,
+    steering: String,
+    peak_force: String,
+    clamp_status: String,
+    saturation_status: String,
+    packet_trend: String,
+    command_trend: String,
+    force_trend: String,
+    runtime_detail: String,
+    last_update: String,
+    last_commands: String,
+}
+
+impl TelemetryPanelView {
+    fn waiting(source_label: &str) -> Self {
+        Self {
+            status: format!("{source_label}. Waiting for bridge telemetry."),
+            uptime: "Idle".to_string(),
+            packet_rate: "0.0/s".to_string(),
+            command_rate: "0.0/s".to_string(),
+            steering: "Unavailable".to_string(),
+            peak_force: "0%".to_string(),
+            clamp_status: "No active force output.".to_string(),
+            saturation_status: "No condition saturation activity.".to_string(),
+            packet_trend: "No packet-rate trend yet.".to_string(),
+            command_trend: "No command-rate trend yet.".to_string(),
+            force_trend: "No force trend yet.".to_string(),
+            runtime_detail:
+                "Launch the bridge to capture input, output, poll interval, and hot-reload state."
+                    .to_string(),
+            last_update: "No translated update yet.".to_string(),
+            last_commands: "No applied command summary yet.".to_string(),
+        }
+    }
+
+    fn failed(source_label: &str, error: &str) -> Self {
+        Self {
+            status: format!("{source_label}. Telemetry unavailable."),
+            uptime: "Read failed".to_string(),
+            packet_rate: "Read failed".to_string(),
+            command_rate: "Read failed".to_string(),
+            steering: "Read failed".to_string(),
+            peak_force: "Read failed".to_string(),
+            clamp_status: format!("Failed to read telemetry log: {error}"),
+            saturation_status: format!("Failed to read telemetry log: {error}"),
+            packet_trend: format!("Failed to read telemetry log: {error}"),
+            command_trend: format!("Failed to read telemetry log: {error}"),
+            force_trend: format!("Failed to read telemetry log: {error}"),
+            runtime_detail: format!("Failed to read telemetry log: {error}"),
+            last_update: format!("Failed to read telemetry log: {error}"),
+            last_commands: format!("Failed to read telemetry log: {error}"),
+        }
+    }
+
+    fn from_events(events: &[BridgeDiagnosticEvent], source_label: &str) -> Self {
+        let telemetry_events = events
+            .iter()
+            .filter(|event| event.category == DiagnosticCategory::Telemetry)
+            .collect::<Vec<_>>();
+        let Some(event) = telemetry_events.last().copied() else {
+            return Self::waiting(source_label);
+        };
+
+        let trend_events = if telemetry_events.len() > 24 {
+            &telemetry_events[telemetry_events.len() - 24..]
+        } else {
+            &telemetry_events
+        };
+
+        let uptime = telemetry_field(event, "uptime", "Waiting");
+        let packet_rate = telemetry_field(event, "packet_rate", "0.0/s");
+        let command_rate = telemetry_field(event, "command_rate", "0.0/s");
+        let steering = telemetry_field(event, "steering", "Unavailable");
+        let peak_force = telemetry_field(event, "peak_force", "0%");
+        let clamp_status = telemetry_field(event, "clamp_status", "No active force output.");
+        let saturation_status = telemetry_field(
+            event,
+            "saturation_status",
+            "No condition saturation activity.",
+        );
+        let last_packet_age = telemetry_field(event, "last_packet_age", "No packet yet");
+        let input = telemetry_field(event, "input", "No steering input");
+        let output = telemetry_field(event, "output", "Unknown output");
+        let poll_ms = telemetry_field(event, "poll_ms", "Unknown poll");
+        let hot_reload = telemetry_field(event, "hot_reload", "Unknown");
+        let updates_total = telemetry_field(event, "updates_total", "0");
+        let commands_total = telemetry_field(event, "commands_total", "0");
+
+        Self {
+            status: format!("{source_label}. Last packet {last_packet_age}."),
+            uptime,
+            packet_rate,
+            command_rate,
+            steering,
+            peak_force,
+            clamp_status,
+            saturation_status,
+            packet_trend: telemetry_rate_trend(trend_events, "packet_rate_value", "/s"),
+            command_trend: telemetry_rate_trend(trend_events, "command_rate_value", "/s"),
+            force_trend: telemetry_percent_trend(trend_events, "peak_force_ratio"),
+            runtime_detail: format!(
+                "Input: {input}\nOutput: {output}\nPoll interval: {poll_ms}\nHot reload: {hot_reload}\nTotals: {updates_total} updates / {commands_total} commands"
+            ),
+            last_update: telemetry_field(
+                event,
+                "last_update",
+                "No translated update captured yet.",
+            ),
+            last_commands: telemetry_field(
+                event,
+                "last_commands",
+                "No applied commands captured yet.",
+            ),
+        }
+    }
+
+    fn apply_to_window(&self, window: &ProfileEditorWindow) {
+        window.set_telemetry_status(SharedString::from(self.status.clone()));
+        window.set_telemetry_uptime(SharedString::from(self.uptime.clone()));
+        window.set_telemetry_packet_rate(SharedString::from(self.packet_rate.clone()));
+        window.set_telemetry_command_rate(SharedString::from(self.command_rate.clone()));
+        window.set_telemetry_steering(SharedString::from(self.steering.clone()));
+        window.set_telemetry_peak_force(SharedString::from(self.peak_force.clone()));
+        window.set_telemetry_clamp_status(SharedString::from(self.clamp_status.clone()));
+        window.set_telemetry_saturation_status(SharedString::from(self.saturation_status.clone()));
+        window.set_telemetry_packet_trend(SharedString::from(self.packet_trend.clone()));
+        window.set_telemetry_command_trend(SharedString::from(self.command_trend.clone()));
+        window.set_telemetry_force_trend(SharedString::from(self.force_trend.clone()));
+        window.set_telemetry_runtime_detail(SharedString::from(self.runtime_detail.clone()));
+        window.set_telemetry_last_update(SharedString::from(self.last_update.clone()));
+        window.set_telemetry_last_commands(SharedString::from(self.last_commands.clone()));
+    }
+}
+
+fn telemetry_field(event: &BridgeDiagnosticEvent, key: &str, fallback: &str) -> String {
+    event.field_value(key).unwrap_or(fallback).to_string()
+}
+
+fn telemetry_numeric_field(event: &BridgeDiagnosticEvent, key: &str) -> Option<f32> {
+    event.field_value(key)?.parse::<f32>().ok()
+}
+
+fn telemetry_numeric_series(events: &[&BridgeDiagnosticEvent], key: &str) -> Vec<f32> {
+    events
+        .iter()
+        .filter_map(|event| telemetry_numeric_field(event, key))
+        .collect()
+}
+
+fn telemetry_rate_trend(events: &[&BridgeDiagnosticEvent], key: &str, unit: &str) -> String {
+    let series = telemetry_numeric_series(events, key);
+    if series.is_empty() {
+        return "No trend yet.".to_string();
+    }
+
+    let peak = series.iter().copied().fold(0.0f32, f32::max);
+    format!("{}  peak {:.1}{unit}", ascii_sparkline(&series), peak)
+}
+
+fn telemetry_percent_trend(events: &[&BridgeDiagnosticEvent], key: &str) -> String {
+    let series = telemetry_numeric_series(events, key);
+    if series.is_empty() {
+        return "No trend yet.".to_string();
+    }
+
+    let peak = series.iter().copied().fold(0.0f32, f32::max) * 100.0;
+    format!("{}  peak {:.0}%", ascii_sparkline(&series), peak)
+}
+
+fn ascii_sparkline(samples: &[f32]) -> String {
+    const GLYPHS: &[u8] = b" .:-=+*#%@";
+
+    if samples.is_empty() {
+        return "-".to_string();
+    }
+
+    let max_value = samples.iter().copied().fold(0.0f32, f32::max).max(1.0);
+    samples
+        .iter()
+        .map(|sample| {
+            let normalized = (*sample / max_value).clamp(0.0, 1.0);
+            let index = (normalized * (GLYPHS.len() - 1) as f32).round() as usize;
+            GLYPHS[index] as char
+        })
+        .collect()
 }
 
 fn selected_steering_device(window: &ProfileEditorWindow) -> Option<u32> {
@@ -345,15 +616,17 @@ fn initial_status_message(
 struct BridgeController {
     config_path: String,
     profile_path: PathBuf,
+    diagnostics_log: DiagnosticsLog,
     child: Option<Child>,
     detail: String,
 }
 
 impl BridgeController {
-    fn new(config_path: String, profile_path: PathBuf) -> Self {
+    fn new(config_path: String, profile_path: PathBuf, diagnostics_log: DiagnosticsLog) -> Self {
         Self {
             config_path,
             profile_path,
+            diagnostics_log,
             child: None,
             detail: "Idle.".to_string(),
         }
@@ -378,8 +651,19 @@ impl BridgeController {
     fn start(&mut self, hot_reload_enabled: bool) -> Result<()> {
         if self.child.is_some() {
             self.detail = "Already running.".to_string();
+            record_ui_event(
+                &self.diagnostics_log,
+                DiagnosticLevel::Warning,
+                DiagnosticCategory::Lifecycle,
+                "Bridge launch requested while bridge is already running",
+                Vec::new(),
+            );
             return Ok(());
         }
+
+        self.diagnostics_log.clear()?;
+        let safety_detail =
+            apply_bridge_safety_reset(&self.config_path, &self.diagnostics_log, "Prelaunch")?;
 
         let executable = std::env::current_exe().context("failed to locate current executable")?;
         let mut command = Command::new(executable);
@@ -389,6 +673,8 @@ impl BridgeController {
             .arg(&self.config_path)
             .arg("--profile")
             .arg(&self.profile_path)
+            .arg("--diagnostics-log")
+            .arg(self.diagnostics_log.path())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -406,19 +692,53 @@ impl BridgeController {
         let pid = child.id();
         self.child = Some(child);
         self.detail = if hot_reload_enabled {
-            format!("PID {pid}. Hot reload on.")
+            format!("PID {pid}. Hot reload on. {safety_detail}")
         } else {
-            format!("PID {pid}. Hot reload off.")
+            format!("PID {pid}. Hot reload off. {safety_detail}")
         };
+        record_ui_event(
+            &self.diagnostics_log,
+            DiagnosticLevel::Info,
+            DiagnosticCategory::Lifecycle,
+            "Launched bridge process",
+            vec![
+                DiagnosticField::new("pid", pid.to_string()),
+                DiagnosticField::new(
+                    "hot_reload",
+                    if hot_reload_enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    },
+                ),
+                DiagnosticField::new("profile", self.profile_path.display().to_string()),
+            ],
+        );
         Ok(())
     }
 
     fn stop(&mut self) -> Result<()> {
         if let Some(mut child) = self.child.take() {
             let pid = child.id();
-            child.kill().context("failed to stop bridge process")?;
+            if child
+                .try_wait()
+                .context("failed to check bridge process before stopping")?
+                .is_none()
+            {
+                child.kill().context("failed to stop bridge process")?;
+            }
             let _ = child.wait();
-            self.detail = format!("Stopped PID {pid}.");
+
+            let safety_detail =
+                apply_bridge_safety_reset(&self.config_path, &self.diagnostics_log, "Shutdown")?;
+            self.detail = format!("Stopped PID {pid}. {safety_detail}");
+            record_ui_event(
+                &self.diagnostics_log,
+                DiagnosticLevel::Info,
+                DiagnosticCategory::Lifecycle,
+                "Stopped bridge process",
+                vec![DiagnosticField::new("pid", pid.to_string())],
+            );
         } else {
             self.detail = "Already stopped.".to_string();
         }
@@ -431,8 +751,21 @@ impl BridgeController {
         };
 
         if let Some(status) = child.try_wait().context("failed to poll bridge process")? {
+            let pid = child.id();
             self.child = None;
-            self.detail = format!("Exited: {status}.");
+            let safety_detail =
+                apply_bridge_safety_reset(&self.config_path, &self.diagnostics_log, "Exit")?;
+            self.detail = format!("Exited: {status}. {safety_detail}");
+            record_ui_event(
+                &self.diagnostics_log,
+                DiagnosticLevel::Warning,
+                DiagnosticCategory::Lifecycle,
+                "Bridge process exited",
+                vec![
+                    DiagnosticField::new("pid", pid.to_string()),
+                    DiagnosticField::new("status", status.to_string()),
+                ],
+            );
             return Ok(Some(self.detail.clone()));
         }
 
@@ -445,6 +778,10 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
     let window = ProfileEditorWindow::new().context("failed to create Slint profile editor")?;
     let profile_state = Rc::new(RefCell::new(profile));
     let path = Rc::new(target_path);
+    let diagnostics_log = Rc::new(DiagnosticsLog::new(DiagnosticsLog::default_path()?));
+    let observability = Rc::new(RefCell::new(ObservabilityController::new(
+        (*diagnostics_log).clone(),
+    )));
     let settings_path = Rc::new(editor_settings_path()?);
     let (loaded_editor_settings, settings_notice) = load_editor_settings(settings_path.as_path());
     let editor_settings = Rc::new(RefCell::new(loaded_editor_settings));
@@ -452,6 +789,7 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
     let bridge_controller = Rc::new(RefCell::new(BridgeController::new(
         config_path.to_string(),
         (*path).clone(),
+        (*diagnostics_log).clone(),
     )));
 
     ProfileEditorState::from(&*profile_state.borrow()).apply_to_window(&window, path.as_path());
@@ -464,6 +802,7 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
     )));
     refresh_runtime_summaries(&window, device_catalog.as_ref());
     sync_bridge_panel(&window, &bridge_controller.borrow());
+    refresh_diagnostics_panel(&window, &observability.borrow());
 
     let weak_window = window.as_weak();
     window.window().on_close_requested(move || {
@@ -517,6 +856,7 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
     let path_handle = Rc::clone(&path);
     let bridge_controller_handle = Rc::clone(&bridge_controller);
     let device_catalog_handle = Rc::clone(&device_catalog);
+    let observability_handle = Rc::clone(&observability);
     window.on_start_bridge_requested(move || {
         let Some(window) = weak_window.upgrade() else {
             return;
@@ -535,6 +875,7 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
         match bridge_controller.start(window.get_hot_reload_enabled()) {
             Ok(()) => {
                 sync_bridge_panel(&window, &bridge_controller);
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
                 window.set_status_message(SharedString::from(if window.get_hot_reload_enabled() {
                     "Bridge started. Hot reload on."
                 } else {
@@ -543,6 +884,7 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
             }
             Err(error) => {
                 sync_bridge_panel(&window, &bridge_controller);
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
                 window.set_status_message(SharedString::from(format!(
                     "Bridge launch failed: {error}"
                 )));
@@ -552,6 +894,7 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
 
     let weak_window = window.as_weak();
     let bridge_controller_handle = Rc::clone(&bridge_controller);
+    let observability_handle = Rc::clone(&observability);
     window.on_stop_bridge_requested(move || {
         let Some(window) = weak_window.upgrade() else {
             return;
@@ -561,10 +904,12 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
         match bridge_controller.stop() {
             Ok(()) => {
                 sync_bridge_panel(&window, &bridge_controller);
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
                 window.set_status_message(SharedString::from("Bridge stopped."));
             }
             Err(error) => {
                 sync_bridge_panel(&window, &bridge_controller);
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
                 window
                     .set_status_message(SharedString::from(format!("Bridge stop failed: {error}")));
             }
@@ -578,16 +923,21 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
             return;
         };
 
-        let Some(device_id) = device_catalog_handle.device_id_for_index(index) else {
-            return;
-        };
-
-        window.set_steering_device(device_id as f32);
-        refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
-        window.set_status_message(SharedString::from(format!(
-            "Selected {}.",
-            device_catalog_handle.label_for_device(Some(device_id))
-        )));
+        match device_catalog_handle.device_id_for_index(index) {
+            Some(device_id) => {
+                window.set_steering_device(device_id as f32);
+                refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
+                window.set_status_message(SharedString::from(format!(
+                    "Selected {}.",
+                    device_catalog_handle.label_for_device(Some(device_id))
+                )));
+            }
+            None => {
+                window.set_steering_device(-1.0);
+                refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
+                window.set_status_message(SharedString::from("Steering input cleared."));
+            }
+        }
     });
 
     let weak_window = window.as_weak();
@@ -600,6 +950,68 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
         window.set_steering_device(-1.0);
         refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
         window.set_status_message(SharedString::from("Steering input cleared."));
+    });
+
+    let weak_window = window.as_weak();
+    let observability_handle = Rc::clone(&observability);
+    window.on_export_session_requested(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+
+        match observability_handle.borrow().export_live_session() {
+            Ok(path) => {
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
+                window.set_status_message(SharedString::from(format!(
+                    "Exported session to {}.",
+                    path.display()
+                )));
+            }
+            Err(error) => {
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
+                window.set_status_message(SharedString::from(format!(
+                    "Session export failed: {error}"
+                )));
+            }
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let observability_handle = Rc::clone(&observability);
+    window.on_replay_latest_session_requested(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+
+        match observability_handle.borrow_mut().replay_latest_session() {
+            Ok(path) => {
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
+                window.set_status_message(SharedString::from(format!(
+                    "Replaying exported session {}.",
+                    path.display()
+                )));
+            }
+            Err(error) => {
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
+                window.set_status_message(SharedString::from(format!("Replay failed: {error}")));
+            }
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let observability_handle = Rc::clone(&observability);
+    window.on_return_to_live_session_requested(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+
+        let returned = observability_handle.borrow_mut().return_to_live();
+        refresh_diagnostics_panel(&window, &observability_handle.borrow());
+        window.set_status_message(SharedString::from(if returned {
+            "Returned to the live session log."
+        } else {
+            "Already viewing the live session log."
+        }));
     });
 
     let weak_window = window.as_weak();
@@ -676,6 +1088,7 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
 
     let weak_window = window.as_weak();
     let bridge_controller_handle = Rc::clone(&bridge_controller);
+    let observability_handle = Rc::clone(&observability);
     window.on_quit_and_shutdown_requested(move || {
         let Some(window) = weak_window.upgrade() else {
             return;
@@ -690,10 +1103,12 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
 
         match stop_result {
             Ok(()) => {
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
                 window.set_status_message(SharedString::from("Shutting down Torquebridge."));
                 let _ = window.hide();
             }
             Err(error) => {
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
                 window.set_status_message(SharedString::from(format!("Shutdown failed: {error}")));
             }
         }
@@ -702,6 +1117,7 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
     let bridge_poll_timer = Timer::default();
     let weak_window = window.as_weak();
     let bridge_controller_handle = Rc::clone(&bridge_controller);
+    let observability_handle = Rc::clone(&observability);
     bridge_poll_timer.start(TimerMode::Repeated, Duration::from_millis(500), move || {
         let Some(window) = weak_window.upgrade() else {
             return;
@@ -711,11 +1127,15 @@ pub fn run_profile_editor(config_path: &str, profile_path: Option<&str>) -> Resu
         match bridge_controller.poll() {
             Ok(Some(message)) => {
                 sync_bridge_panel(&window, &bridge_controller);
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
                 window.set_status_message(SharedString::from(message));
             }
-            Ok(None) => {}
+            Ok(None) => {
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
+            }
             Err(error) => {
                 sync_bridge_panel(&window, &bridge_controller);
+                refresh_diagnostics_panel(&window, &observability_handle.borrow());
                 window.set_status_message(SharedString::from(format!(
                     "Bridge runtime check failed: {error}"
                 )));
@@ -792,10 +1212,138 @@ fn refresh_runtime_summaries(window: &ProfileEditorWindow, device_catalog: &Devi
     )));
 }
 
+fn refresh_diagnostics_panel(
+    window: &ProfileEditorWindow,
+    observability: &ObservabilityController,
+) {
+    let source_label = observability.source_label();
+    let diagnostics_log = observability.current_log();
+
+    window.set_observability_source_label(SharedString::from(source_label.clone()));
+    window.set_diagnostics_log_path(SharedString::from(
+        diagnostics_log.path().display().to_string(),
+    ));
+
+    match diagnostics_log.read_recent(OBSERVABILITY_EVENT_LIMIT) {
+        Ok(events) => {
+            apply_diagnostics_view(window, &events);
+            TelemetryPanelView::from_events(&events, &source_label).apply_to_window(window);
+        }
+        Err(error) => {
+            apply_diagnostics_error(window, &error.to_string());
+            TelemetryPanelView::failed(&source_label, &error.to_string()).apply_to_window(window);
+        }
+    }
+}
+
+fn apply_diagnostics_view(window: &ProfileEditorWindow, events: &[BridgeDiagnosticEvent]) {
+    let filtered_events = events
+        .iter()
+        .filter(|event| event.category != DiagnosticCategory::Telemetry)
+        .collect::<Vec<_>>();
+    let diagnostics_events = if filtered_events.len() > DIAGNOSTIC_EVENT_LIMIT {
+        &filtered_events[filtered_events.len() - DIAGNOSTIC_EVENT_LIMIT..]
+    } else {
+        &filtered_events
+    };
+
+    let diagnostics_text = if diagnostics_events.is_empty() {
+        "No bridge diagnostics yet. Launch the bridge to capture startup, apply, telemetry, and safety events."
+            .to_string()
+    } else {
+        diagnostics_events
+            .iter()
+            .rev()
+            .map(|event| format_event(event))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    };
+
+    window.set_diagnostics_status(SharedString::from(if diagnostics_events.is_empty() {
+        "Waiting for session"
+    } else {
+        "Tail updated"
+    }));
+    window.set_diagnostics_event_count(SharedString::from(format!(
+        "{} recent event{}",
+        diagnostics_events.len(),
+        if diagnostics_events.len() == 1 {
+            ""
+        } else {
+            "s"
+        }
+    )));
+    window.set_diagnostics_events(SharedString::from(diagnostics_text));
+}
+
+fn apply_diagnostics_error(window: &ProfileEditorWindow, error: &str) {
+    window.set_diagnostics_status(SharedString::from("Read failed"));
+    window.set_diagnostics_event_count(SharedString::from("Diagnostics unavailable"));
+    window.set_diagnostics_events(SharedString::from(format!(
+        "Failed to read diagnostics log: {error}"
+    )));
+}
+
 fn sync_bridge_panel(window: &ProfileEditorWindow, bridge_controller: &BridgeController) {
     window.set_bridge_running(bridge_controller.is_running());
     window.set_bridge_status(SharedString::from(bridge_controller.status_label()));
     window.set_bridge_detail(SharedString::from(bridge_controller.detail().to_string()));
+}
+
+fn apply_bridge_safety_reset(
+    config_path: &str,
+    diagnostics_log: &DiagnosticsLog,
+    phase: &str,
+) -> Result<String> {
+    let result = (|| -> Result<String> {
+        let controllers = load_controllers(config_path)?;
+        let direct_input = DirectInput::create()?;
+        let mut output = direct_input.open_configured_ffb_device(&controllers)?;
+        output.apply_commands(&[
+            WheelCommand::DeviceControl(DeviceControlCommand::StopAll),
+            WheelCommand::DeviceControl(DeviceControlCommand::Reset),
+        ])?;
+
+        Ok(format!(
+            "Safety reset sent to '{}'.",
+            output.info().instance_name,
+        ))
+    })();
+
+    match result {
+        Ok(detail) => {
+            record_ui_event(
+                diagnostics_log,
+                DiagnosticLevel::Info,
+                DiagnosticCategory::Safety,
+                format!("{phase} safety reset applied"),
+                vec![DiagnosticField::new("detail", detail.clone())],
+            );
+            Ok(detail)
+        }
+        Err(error) => {
+            record_ui_event(
+                diagnostics_log,
+                DiagnosticLevel::Error,
+                DiagnosticCategory::Error,
+                format!("{phase} safety reset failed"),
+                vec![DiagnosticField::new("error", error.to_string())],
+            );
+            Err(error)
+        }
+    }
+}
+
+fn record_ui_event(
+    diagnostics_log: &DiagnosticsLog,
+    level: DiagnosticLevel,
+    category: DiagnosticCategory,
+    message: impl Into<String>,
+    fields: Vec<DiagnosticField>,
+) {
+    if let Err(error) = diagnostics_log.append(level, category, message, fields) {
+        eprintln!("failed to write UI diagnostics event: {error}");
+    }
 }
 
 #[cfg(test)]
@@ -892,9 +1440,15 @@ mod tests {
             load_error: None,
         };
 
-        assert_eq!(catalog.selected_index(Some(2)), 1);
-        assert_eq!(catalog.selected_index(Some(7)), -1);
-        assert_eq!(catalog.label_for_device(Some(0)), "#0 FFBeast Wheel");
+        assert_eq!(catalog.selected_index(None), 0);
+        assert_eq!(catalog.selected_index(Some(2)), 2);
+        assert_eq!(catalog.selected_index(Some(7)), 0);
+        assert_eq!(catalog.device_id_for_index(0), None);
+        assert_eq!(catalog.device_id_for_index(2), Some(2));
+        assert_eq!(
+            catalog.label_for_device(Some(0)),
+            "FFBeast Wheel [WinMM #0]"
+        );
         assert_eq!(catalog.label_for_device(None), "No steering device");
         assert_eq!(hot_reload_summary(true), "On save");
         assert_eq!(hot_reload_summary(false), "Manual");
@@ -911,5 +1465,103 @@ mod tests {
         let restored: EditorSettings = serde_json::from_str(&json).expect("deserialize settings");
 
         assert_eq!(restored, settings);
+    }
+
+    #[test]
+    fn telemetry_panel_prefers_latest_telemetry_snapshot() {
+        let older = BridgeDiagnosticEvent {
+            timestamp_ms: 1,
+            level: DiagnosticLevel::Info,
+            category: DiagnosticCategory::Telemetry,
+            message: "Runtime telemetry snapshot".to_string(),
+            fields: vec![
+                DiagnosticField::new("uptime", "0.5 s"),
+                DiagnosticField::new("packet_rate", "1.0/s"),
+                DiagnosticField::new("packet_rate_value", "1.0"),
+                DiagnosticField::new("command_rate", "2.0/s"),
+                DiagnosticField::new("command_rate_value", "2.0"),
+                DiagnosticField::new("steering", "+0% (32768)"),
+                DiagnosticField::new("peak_force", "18%"),
+                DiagnosticField::new("peak_force_ratio", "0.1800"),
+                DiagnosticField::new("clamp_status", "Constant has headroom at 18% peak."),
+                DiagnosticField::new("saturation_status", "Spring saturation is 40%."),
+                DiagnosticField::new("saturation_ratio", "0.4000"),
+                DiagnosticField::new("last_packet_age", "500 ms ago"),
+                DiagnosticField::new("input", "Older Input"),
+                DiagnosticField::new("output", "Older Output"),
+                DiagnosticField::new("poll_ms", "5 ms"),
+                DiagnosticField::new("hot_reload", "On save"),
+                DiagnosticField::new("updates_total", "1"),
+                DiagnosticField::new("commands_total", "2"),
+                DiagnosticField::new("last_update", "old update"),
+                DiagnosticField::new("last_commands", "old commands"),
+            ],
+        };
+        let latest = BridgeDiagnosticEvent {
+            timestamp_ms: 2,
+            level: DiagnosticLevel::Info,
+            category: DiagnosticCategory::Telemetry,
+            message: "Runtime telemetry snapshot".to_string(),
+            fields: vec![
+                DiagnosticField::new("uptime", "2.0 s"),
+                DiagnosticField::new("packet_rate", "8.0/s"),
+                DiagnosticField::new("packet_rate_value", "8.0"),
+                DiagnosticField::new("command_rate", "16.0/s"),
+                DiagnosticField::new("command_rate_value", "16.0"),
+                DiagnosticField::new("steering", "+12% (36600)"),
+                DiagnosticField::new("peak_force", "92%"),
+                DiagnosticField::new("peak_force_ratio", "0.9200"),
+                DiagnosticField::new("clamp_status", "Periodic is near clamp at 92%."),
+                DiagnosticField::new("saturation_status", "Spring saturation is capped at 100%."),
+                DiagnosticField::new("saturation_ratio", "1.0000"),
+                DiagnosticField::new("last_packet_age", "80 ms ago"),
+                DiagnosticField::new("input", "FFBeast Wheel [WinMM #0]"),
+                DiagnosticField::new("output", "FFBeast Racing Wheel"),
+                DiagnosticField::new("poll_ms", "4 ms"),
+                DiagnosticField::new("hot_reload", "Manual"),
+                DiagnosticField::new("updates_total", "12"),
+                DiagnosticField::new("commands_total", "24"),
+                DiagnosticField::new("last_update", "constant(magnitude=4000)"),
+                DiagnosticField::new("last_commands", "constant(magnitude=-2500)"),
+            ],
+        };
+
+        let view = TelemetryPanelView::from_events(
+            &[
+                BridgeDiagnosticEvent {
+                    timestamp_ms: 0,
+                    level: DiagnosticLevel::Info,
+                    category: DiagnosticCategory::Lifecycle,
+                    message: "Bridge launched".to_string(),
+                    fields: Vec::new(),
+                },
+                older,
+                latest,
+            ],
+            "Source: live session log",
+        );
+
+        assert_eq!(view.uptime, "2.0 s");
+        assert_eq!(view.packet_rate, "8.0/s");
+        assert_eq!(view.command_rate, "16.0/s");
+        assert_eq!(view.steering, "+12% (36600)");
+        assert_eq!(view.peak_force, "92%");
+        assert!(view.status.contains("80 ms ago"));
+        assert!(view.status.contains("Source: live session log"));
+        assert_eq!(view.clamp_status, "Periodic is near clamp at 92%.");
+        assert_eq!(
+            view.saturation_status,
+            "Spring saturation is capped at 100%."
+        );
+        assert!(view.runtime_detail.contains("FFBeast Wheel [WinMM #0]"));
+        assert!(view.runtime_detail.contains("FFBeast Racing Wheel"));
+        assert!(view.runtime_detail.contains("4 ms"));
+        assert!(view.runtime_detail.contains("Manual"));
+        assert!(view.runtime_detail.contains("12 updates / 24 commands"));
+        assert!(view.packet_trend.contains("peak 8.0/s"));
+        assert!(view.command_trend.contains("peak 16.0/s"));
+        assert!(view.force_trend.contains("peak 92%"));
+        assert_eq!(view.last_update, "constant(magnitude=4000)");
+        assert_eq!(view.last_commands, "constant(magnitude=-2500)");
     }
 }

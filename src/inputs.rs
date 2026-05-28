@@ -4,10 +4,16 @@ use thiserror::Error;
 #[cfg(windows)]
 mod winmm {
     use super::*;
+    use std::collections::HashMap;
     use std::mem::size_of;
+    use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
 
     const MAX_PNAME_LEN: usize = 32;
     const MAX_OEM_VXD_NAME_LEN: usize = 260;
+    const CURRENT_JOYSTICK_SETTINGS_PATH: &str = r"System\CurrentControlSet\Control\MediaResources\Joystick\DINPUT.DLL\CurrentJoystickSettings";
+    const OEM_REGISTRY_PATH: &str =
+        r"System\CurrentControlSet\Control\MediaProperties\PrivateProperties\Joystick\OEM";
 
     const JOYERR_NOERROR: u32 = 0;
     const JOY_RETURNX: u32 = 0x0000_0001;
@@ -140,12 +146,14 @@ mod winmm {
     impl WinmmJoystick {
         pub fn list_devices() -> Result<Vec<WinmmDeviceInfo>, WinmmError> {
             let count = unsafe { joyGetNumDevs() };
+            let oem_names = read_oem_names();
             let mut devices = Vec::new();
             for id in 0..count {
                 if let Some(caps) = read_caps(id)? {
+                    let raw_name = utf16_to_string(&caps.sz_pname);
                     devices.push(WinmmDeviceInfo {
                         id,
-                        name: utf16_to_string(&caps.sz_pname),
+                        name: friendly_device_name(id, &raw_name, &oem_names),
                         axis_count: caps.w_num_axes,
                         button_count: caps.w_num_buttons,
                     });
@@ -160,10 +168,12 @@ mod winmm {
                 device_id: id,
                 code: 0,
             })?;
+            let oem_names = read_oem_names();
+            let raw_name = utf16_to_string(&caps.sz_pname);
 
             Ok(Self {
                 id,
-                name: utf16_to_string(&caps.sz_pname),
+                name: friendly_device_name(id, &raw_name, &oem_names),
                 caps,
             })
         }
@@ -222,6 +232,56 @@ mod winmm {
         }
     }
 
+    fn read_oem_names() -> HashMap<u32, String> {
+        let current_settings =
+            match RegKey::predef(HKEY_CURRENT_USER).open_subkey(CURRENT_JOYSTICK_SETTINGS_PATH) {
+                Ok(key) => key,
+                Err(_) => return HashMap::new(),
+            };
+
+        current_settings
+            .enum_values()
+            .filter_map(Result::ok)
+            .filter_map(|(value_name, _)| {
+                let slot = joystick_slot_from_value_name(&value_name)?;
+                let token: String = current_settings.get_value(&value_name).ok()?;
+                let oem_name = read_oem_name(&token)?;
+                Some((slot, oem_name))
+            })
+            .collect()
+    }
+
+    fn joystick_slot_from_value_name(value_name: &str) -> Option<u32> {
+        let slot = value_name
+            .strip_prefix("Joystick")?
+            .strip_suffix("OEMName")?
+            .parse::<u32>()
+            .ok()?;
+        slot.checked_sub(1)
+    }
+
+    fn read_oem_name(token: &str) -> Option<String> {
+        for hive in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+            let path = format!(r"{OEM_REGISTRY_PATH}\{token}");
+            let key = RegKey::predef(hive).open_subkey(&path).ok()?;
+            let name: String = key.get_value("OEMName").ok()?;
+            let trimmed = name.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+
+        None
+    }
+
+    fn friendly_device_name(id: u32, raw_name: &str, oem_names: &HashMap<u32, String>) -> String {
+        oem_names
+            .get(&id)
+            .filter(|name| !name.trim().is_empty())
+            .cloned()
+            .unwrap_or_else(|| raw_name.to_string())
+    }
+
     fn utf16_to_string(raw: &[u16]) -> String {
         let end = raw.iter().position(|ch| *ch == 0).unwrap_or(raw.len());
         String::from_utf16_lossy(&raw[..end])
@@ -265,6 +325,13 @@ mod winmm {
         fn decode_pov_maps_centered_to_minus_one() {
             assert_eq!(decode_pov(JOY_POVCENTERED), -1);
             assert_eq!(decode_pov(9000), 9000);
+        }
+
+        #[test]
+        fn joystick_slot_from_value_name_maps_registry_slots_to_zero_based_ids() {
+            assert_eq!(joystick_slot_from_value_name("Joystick1OEMName"), Some(0));
+            assert_eq!(joystick_slot_from_value_name("Joystick8OEMName"), Some(7));
+            assert_eq!(joystick_slot_from_value_name("JoystickOEMName"), None);
         }
     }
 }

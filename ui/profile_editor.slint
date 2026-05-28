@@ -1,9 +1,10 @@
-import { LineEdit, ScrollView, Slider } from "std-widgets.slint";
+import { ComboBox, LineEdit, ScrollView, Slider } from "std-widgets.slint";
 
 component NavCard inherits Rectangle {
     in property <string> label;
     in property <string> tag;
     in property <bool> selected: false;
+    callback pressed();
 
     height: 54px;
     border-radius: 18px;
@@ -37,6 +38,12 @@ component NavCard inherits Rectangle {
             font-size: 15px;
             font-weight: 700;
             vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.pressed();
         }
     }
 }
@@ -189,54 +196,6 @@ component ToggleCard inherits Rectangle {
     }
 }
 
-component DeviceOption inherits Rectangle {
-    in property <string> label;
-    in property <bool> selected: false;
-    callback pressed();
-
-    height: 54px;
-    border-radius: 18px;
-    background: selected ? #182233 : #101722;
-    border-color: selected ? #d39a2d : #1d2533;
-    border-width: 1px;
-
-    HorizontalLayout {
-        padding: 14px;
-        spacing: 12px;
-
-        Rectangle {
-            width: 10px;
-            height: 10px;
-            border-radius: 999px;
-            background: selected ? #d39a2d : #314058;
-        }
-
-        Text {
-            text: label;
-            color: #eef3ff;
-            font-size: 14px;
-            font-weight: 600;
-            vertical-alignment: center;
-        }
-
-        Rectangle { }
-
-        Text {
-            text: selected ? "Selected" : "";
-            color: #d39a2d;
-            font-size: 12px;
-            font-weight: 800;
-            vertical-alignment: center;
-        }
-    }
-
-    TouchArea {
-        clicked => {
-            root.pressed();
-        }
-    }
-}
-
 component FieldCard inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
@@ -325,13 +284,32 @@ export component ProfileEditorWindow inherits Window {
     in-out property <string> steering_device_summary;
     in-out property <string> hot_reload_summary;
     in-out property <string> selected_steering_device_label;
+    in-out property <string> diagnostics_status;
+    in-out property <string> diagnostics_event_count;
+    in-out property <string> diagnostics_log_path;
+    in-out property <string> diagnostics_events;
+    in-out property <string> observability_source_label;
+    in-out property <string> telemetry_status;
+    in-out property <string> telemetry_uptime;
+    in-out property <string> telemetry_packet_rate;
+    in-out property <string> telemetry_command_rate;
+    in-out property <string> telemetry_steering;
+    in-out property <string> telemetry_peak_force;
+    in-out property <string> telemetry_clamp_status;
+    in-out property <string> telemetry_saturation_status;
+    in-out property <string> telemetry_packet_trend;
+    in-out property <string> telemetry_command_trend;
+    in-out property <string> telemetry_force_trend;
+    in-out property <string> telemetry_runtime_detail;
+    in-out property <string> telemetry_last_update;
+    in-out property <string> telemetry_last_commands;
     in property <[string]> steering_device_options;
     in-out property <string> device_catalog_message;
     in-out property <bool> bridge_running;
     in-out property <bool> hot_reload_enabled: true;
     in-out property <bool> close_to_taskbar_enabled: false;
     in-out property <int> current_section: 0;
-    in-out property <int> selected_steering_device_index: -1;
+    in-out property <int> selected_steering_device_index: 0;
     in-out property <float> poll_ms;
     in-out property <float> steering_device;
     in-out property <float> const_magnitude;
@@ -355,6 +333,9 @@ export component ProfileEditorWindow inherits Window {
     callback stop_bridge_requested();
     callback select_steering_device_requested(int);
     callback clear_steering_device_requested();
+    callback export_session_requested();
+    callback replay_latest_session_requested();
+    callback return_to_live_session_requested();
     callback toggle_hot_reload_requested();
     callback toggle_close_to_taskbar_requested();
     callback quit_and_shutdown_requested();
@@ -402,10 +383,46 @@ export component ProfileEditorWindow inherits Window {
                         background: #18202d;
                     }
 
-                    NavCard { label: "Force Profile"; tag: "FX"; selected: true; }
-                    NavCard { label: "Bridge Runtime"; tag: "RT"; }
-                    NavCard { label: "Settings"; tag: "ST"; }
-                    NavCard { label: "Release"; tag: "RL"; }
+                    NavCard {
+                        label: "Force Profile";
+                        tag: "FX";
+                        selected: root.current_section >= 1 && root.current_section <= 3;
+                        pressed => {
+                            root.current_section = 1;
+                        }
+                    }
+                    NavCard {
+                        label: "Bridge Runtime";
+                        tag: "RT";
+                        selected: root.current_section == 0;
+                        pressed => {
+                            root.current_section = 0;
+                        }
+                    }
+                    NavCard {
+                        label: "Settings";
+                        tag: "ST";
+                        selected: root.current_section == 4;
+                        pressed => {
+                            root.current_section = 4;
+                        }
+                    }
+                    NavCard {
+                        label: "Diagnostics";
+                        tag: "DG";
+                        selected: root.current_section == 5;
+                        pressed => {
+                            root.current_section = 5;
+                        }
+                    }
+                    NavCard {
+                        label: "Telemetry";
+                        tag: "TM";
+                        selected: root.current_section == 6;
+                        pressed => {
+                            root.current_section = 6;
+                        }
+                    }
 
                     Rectangle { }
 
@@ -421,14 +438,20 @@ export component ProfileEditorWindow inherits Window {
                             spacing: 10px;
 
                             Text {
-                                text: "Release Direction";
+                                text: "Studio Notes";
                                 color: #f8fbff;
                                 font-size: 17px;
                                 font-weight: 700;
                             }
 
                             Text {
-                                text: "Live profile editor for the bridge.";
+                                text: "Runtime, tuning, and settings all live here.";
+                                color: #8390a7;
+                                font-size: 13px;
+                            }
+
+                            Text {
+                                text: "Save the profile, then launch or restart the bridge.";
                                 color: #8390a7;
                                 font-size: 13px;
                             }
@@ -461,7 +484,7 @@ export component ProfileEditorWindow inherits Window {
                                 background: #d39a2d;
 
                                 Text {
-                                    text: "FB";
+                                    text: "TB";
                                     color: #1a1305;
                                     font-size: 24px;
                                     font-weight: 900;
@@ -732,6 +755,22 @@ export component ProfileEditorWindow inherits Window {
                                         root.current_section = 4;
                                     }
                                 }
+
+                                SegmentButton {
+                                    label: "Diagnostics";
+                                    selected: root.current_section == 5;
+                                    pressed => {
+                                        root.current_section = 5;
+                                    }
+                                }
+
+                                SegmentButton {
+                                    label: "Telemetry";
+                                    selected: root.current_section == 6;
+                                    pressed => {
+                                        root.current_section = 6;
+                                    }
+                                }
                             }
 
                             if root.current_section == 0 : Rectangle {
@@ -789,76 +828,26 @@ export component ProfileEditorWindow inherits Window {
                                                     font-size: 13px;
                                                 }
 
-                                                Rectangle {
-                                                    border-radius: 14px;
-                                                    background: #0c1118;
-                                                    border-color: #1f2735;
-                                                    border-width: 1px;
-                                                    height: 42px;
-
-                                                    Text {
-                                                        text: selected_steering_device_label;
-                                                        color: #e1e7f4;
-                                                        font-size: 15px;
-                                                        font-weight: 700;
-                                                        horizontal-alignment: center;
-                                                        vertical-alignment: center;
+                                                ComboBox {
+                                                    model: root.steering_device_options;
+                                                    current-index: root.selected_steering_device_index < 0 ? 0 : root.selected_steering_device_index;
+                                                    selected => {
+                                                        root.select_steering_device_requested(self.current-index);
                                                     }
                                                 }
 
-                                                HorizontalLayout {
-                                                    spacing: 12px;
-
-                                                    ActionButton {
-                                                        width: 148px;
-                                                        label: "Clear Selection";
-                                                        pressed => {
-                                                            root.clear_steering_device_requested();
-                                                        }
-                                                    }
-
-                                                    Rectangle { }
-
-                                                    Text {
-                                                        text: steering_device_summary;
-                                                        color: #8d96a8;
-                                                        font-size: 13px;
-                                                        vertical-alignment: center;
-                                                    }
+                                                Text {
+                                                    text: selected_steering_device_label;
+                                                    color: #e1e7f4;
+                                                    font-size: 14px;
+                                                    font-weight: 700;
                                                 }
-                                            }
-                                        }
-                                    }
 
-                                    Rectangle {
-                                        border-radius: 24px;
-                                        background: #121925;
-                                        border-color: #1d2533;
-                                        border-width: 1px;
-
-                                        VerticalLayout {
-                                            padding: 18px;
-                                            spacing: 12px;
-
-                                            Text {
-                                                text: "Available Devices";
-                                                color: #f6f8fb;
-                                                font-size: 17px;
-                                                font-weight: 700;
-                                            }
-
-                                            Text {
-                                                text: device_catalog_message;
-                                                color: #7f8aa0;
-                                                font-size: 13px;
-                                                visible: device_catalog_message != "";
-                                            }
-
-                                            for device[index] in root.steering_device_options : DeviceOption {
-                                                label: device;
-                                                selected: root.selected_steering_device_index == index;
-                                                pressed => {
-                                                    root.select_steering_device_requested(index);
+                                                Text {
+                                                    text: device_catalog_message;
+                                                    color: #8d96a8;
+                                                    font-size: 13px;
+                                                    visible: device_catalog_message != "";
                                                 }
                                             }
                                         }
@@ -1178,6 +1167,448 @@ export component ProfileEditorWindow inherits Window {
                                                     font-weight: 600;
                                                     vertical-alignment: center;
                                                 }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.current_section == 5 : Rectangle {
+                                background: transparent;
+
+                                VerticalLayout {
+                                    spacing: 18px;
+
+                                    Text {
+                                        text: "Diagnostics";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
+                                    }
+
+                                    Text {
+                                        text: "Structured runtime events, startup snapshots, and safety resets for the current bridge session.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
+                                    }
+
+                                    Text {
+                                        text: observability_source_label;
+                                        color: #d9e2f2;
+                                        font-size: 13px;
+                                        wrap: word-wrap;
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        StatCard {
+                                            title: "RECENT EVENTS";
+                                            value: diagnostics_event_count;
+                                            highlighted: true;
+                                        }
+
+                                        StatCard {
+                                            title: "LOG STATUS";
+                                            value: diagnostics_status;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 14px;
+
+                                        ActionButton {
+                                            width: 164px;
+                                            primary: false;
+                                            label: "Export Session";
+                                            pressed => {
+                                                root.export_session_requested();
+                                            }
+                                        }
+
+                                        ActionButton {
+                                            width: 202px;
+                                            primary: false;
+                                            label: "Replay Latest Export";
+                                            pressed => {
+                                                root.replay_latest_session_requested();
+                                            }
+                                        }
+
+                                        ActionButton {
+                                            width: 152px;
+                                            primary: false;
+                                            label: "Return To Live";
+                                            pressed => {
+                                                root.return_to_live_session_requested();
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        border-radius: 24px;
+                                        background: #121925;
+                                        border-color: #1d2533;
+                                        border-width: 1px;
+                                        min-height: 106px;
+
+                                        VerticalLayout {
+                                            padding: 18px;
+                                            spacing: 10px;
+
+                                            Text {
+                                                text: "Log File";
+                                                color: #f6f8fb;
+                                                font-size: 17px;
+                                                font-weight: 700;
+                                            }
+
+                                            Text {
+                                                text: diagnostics_log_path;
+                                                color: #d9e2f2;
+                                                font-size: 13px;
+                                                wrap: word-wrap;
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        border-radius: 24px;
+                                        background: #121925;
+                                        border-color: #1d2533;
+                                        border-width: 1px;
+                                        min-height: 420px;
+
+                                        VerticalLayout {
+                                            padding: 18px;
+                                            spacing: 12px;
+
+                                            Text {
+                                                text: "Recent Events";
+                                                color: #f6f8fb;
+                                                font-size: 17px;
+                                                font-weight: 700;
+                                            }
+
+                                            Text {
+                                                text: diagnostics_events;
+                                                color: #d9e2f2;
+                                                font-size: 13px;
+                                                wrap: word-wrap;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.current_section == 6 : Rectangle {
+                                background: transparent;
+
+                                VerticalLayout {
+                                    spacing: 18px;
+
+                                    Text {
+                                        text: "Telemetry";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
+                                    }
+
+                                    Text {
+                                        text: "Live bridge snapshots built from the same session log as diagnostics, but focused on current state instead of the full event tail.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
+                                    }
+
+                                    Text {
+                                        text: observability_source_label;
+                                        color: #d9e2f2;
+                                        font-size: 13px;
+                                        wrap: word-wrap;
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        StatCard {
+                                            title: "UPTIME";
+                                            value: telemetry_uptime;
+                                            highlighted: true;
+                                        }
+
+                                        StatCard {
+                                            title: "PACKET RATE";
+                                            value: telemetry_packet_rate;
+                                        }
+
+                                        StatCard {
+                                            title: "COMMAND RATE";
+                                            value: telemetry_command_rate;
+                                        }
+
+                                        StatCard {
+                                            title: "STEERING";
+                                            value: telemetry_steering;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        StatCard {
+                                            title: "PEAK FORCE";
+                                            value: telemetry_peak_force;
+                                            highlighted: true;
+                                        }
+
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 112px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 10px;
+
+                                                Text {
+                                                    text: "Clamp Status";
+                                                    color: #f6f8fb;
+                                                    font-size: 17px;
+                                                    font-weight: 700;
+                                                }
+
+                                                Text {
+                                                    text: telemetry_clamp_status;
+                                                    color: #d9e2f2;
+                                                    font-size: 13px;
+                                                    wrap: word-wrap;
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 112px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 10px;
+
+                                                Text {
+                                                    text: "Condition Saturation";
+                                                    color: #f6f8fb;
+                                                    font-size: 17px;
+                                                    font-weight: 700;
+                                                }
+
+                                                Text {
+                                                    text: telemetry_saturation_status;
+                                                    color: #d9e2f2;
+                                                    font-size: 13px;
+                                                    wrap: word-wrap;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 132px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 10px;
+
+                                                Text {
+                                                    text: "Packet Trend";
+                                                    color: #f6f8fb;
+                                                    font-size: 17px;
+                                                    font-weight: 700;
+                                                }
+
+                                                Text {
+                                                    text: telemetry_packet_trend;
+                                                    color: #d9e2f2;
+                                                    font-size: 13px;
+                                                    wrap: word-wrap;
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 132px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 10px;
+
+                                                Text {
+                                                    text: "Command Trend";
+                                                    color: #f6f8fb;
+                                                    font-size: 17px;
+                                                    font-weight: 700;
+                                                }
+
+                                                Text {
+                                                    text: telemetry_command_trend;
+                                                    color: #d9e2f2;
+                                                    font-size: 13px;
+                                                    wrap: word-wrap;
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 132px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 10px;
+
+                                                Text {
+                                                    text: "Force Trend";
+                                                    color: #f6f8fb;
+                                                    font-size: 17px;
+                                                    font-weight: 700;
+                                                }
+
+                                                Text {
+                                                    text: telemetry_force_trend;
+                                                    color: #d9e2f2;
+                                                    font-size: 13px;
+                                                    wrap: word-wrap;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        border-radius: 24px;
+                                        background: #121925;
+                                        border-color: #1d2533;
+                                        border-width: 1px;
+                                        min-height: 112px;
+
+                                        VerticalLayout {
+                                            padding: 18px;
+                                            spacing: 10px;
+
+                                            Text {
+                                                text: "Snapshot Status";
+                                                color: #f6f8fb;
+                                                font-size: 17px;
+                                                font-weight: 700;
+                                            }
+
+                                            Text {
+                                                text: telemetry_status;
+                                                color: #d9e2f2;
+                                                font-size: 13px;
+                                                wrap: word-wrap;
+                                            }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 214px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 12px;
+
+                                                Text {
+                                                    text: "Runtime Context";
+                                                    color: #f6f8fb;
+                                                    font-size: 17px;
+                                                    font-weight: 700;
+                                                }
+
+                                                Text {
+                                                    text: telemetry_runtime_detail;
+                                                    color: #d9e2f2;
+                                                    font-size: 13px;
+                                                    wrap: word-wrap;
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 214px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 12px;
+
+                                                Text {
+                                                    text: "Last Translation";
+                                                    color: #f6f8fb;
+                                                    font-size: 17px;
+                                                    font-weight: 700;
+                                                }
+
+                                                Text {
+                                                    text: telemetry_last_update;
+                                                    color: #d9e2f2;
+                                                    font-size: 13px;
+                                                    wrap: word-wrap;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        border-radius: 24px;
+                                        background: #121925;
+                                        border-color: #1d2533;
+                                        border-width: 1px;
+                                        min-height: 180px;
+
+                                        VerticalLayout {
+                                            padding: 18px;
+                                            spacing: 12px;
+
+                                            Text {
+                                                text: "Last Applied Commands";
+                                                color: #f6f8fb;
+                                                font-size: 17px;
+                                                font-weight: 700;
+                                            }
+
+                                            Text {
+                                                text: telemetry_last_commands;
+                                                color: #d9e2f2;
+                                                font-size: 13px;
+                                                wrap: word-wrap;
                                             }
                                         }
                                     }

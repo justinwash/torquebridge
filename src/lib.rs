@@ -1,5 +1,6 @@
 mod constants;
 mod device;
+pub mod diagnostics;
 mod protocol;
 
 pub mod backends;

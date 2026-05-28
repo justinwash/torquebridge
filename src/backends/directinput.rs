@@ -5,8 +5,8 @@ mod imp {
     use crate::config::ControllerConfig;
     use crate::core::domain::{ConditionCommand, DeviceControlCommand, EffectKind, WheelCommand};
     use libloading::Library;
-    use std::ffi::c_void;
     use std::ffi::OsString;
+    use std::ffi::c_void;
     use std::mem::{size_of, zeroed};
     use std::os::windows::ffi::OsStringExt;
     use std::ptr::{null, null_mut};
@@ -630,6 +630,14 @@ mod imp {
     impl OpenedDirectInputDevice {
         pub fn info(&self) -> &DirectInputDeviceInfo {
             &self.info
+        }
+
+        pub fn actuator_count(&self) -> usize {
+            self.actuator_object_ids.len()
+        }
+
+        pub fn actuator_object_ids(&self) -> Vec<u32> {
+            self.actuator_object_ids.clone()
         }
 
         pub fn capabilities(&self) -> Result<DirectInputCapabilities, DirectInputError> {
@@ -1466,6 +1474,14 @@ mod imp {
     impl OpenedDirectInputDevice {
         pub fn info(&self) -> &DirectInputDeviceInfo {
             unreachable!()
+        }
+
+        pub fn actuator_count(&self) -> usize {
+            0
+        }
+
+        pub fn actuator_object_ids(&self) -> Vec<u32> {
+            Vec::new()
         }
 
         pub fn cached_capabilities(&self) -> DirectInputCapabilities {
