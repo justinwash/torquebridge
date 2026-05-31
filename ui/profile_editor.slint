@@ -203,6 +203,9 @@ component FieldCard inherits Rectangle {
     in property <float> maximum: 1;
     in property <float> step: 0.01;
     in-out property <float> value: 0;
+    pure function snap_and_clamp(v: float) -> float {
+        return clamp(round(v * 100) / 100, root.minimum, root.maximum);
+    }
 
     border-radius: 24px;
     background: #121925;
@@ -230,7 +233,11 @@ component FieldCard inherits Rectangle {
         Slider {
             minimum: minimum;
             maximum: maximum;
+            step: 0.01;
             value <=> root.value;
+            changed => {
+                root.value = root.snap_and_clamp(self.value);
+            }
         }
 
         HorizontalLayout {
@@ -240,7 +247,7 @@ component FieldCard inherits Rectangle {
                 width: 44px;
                 label: "-";
                 pressed => {
-                    root.value = root.value - root.step < root.minimum ? root.minimum : root.value - root.step;
+                    root.value = root.snap_and_clamp(root.value - root.step);
                 }
             }
 
@@ -252,13 +259,18 @@ component FieldCard inherits Rectangle {
                 min-width: 96px;
                 height: 42px;
 
-                Text {
-                    text: value;
-                    color: #e1e7f4;
-                    font-size: 15px;
-                    font-weight: 700;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                LineEdit {
+                    text: root.value;
+                    edited => {
+                        if self.text.is-float() {
+                            root.value = root.snap_and_clamp(self.text.to-float());
+                        }
+                    }
+                    accepted => {
+                        if self.text.is-float() {
+                            root.value = root.snap_and_clamp(self.text.to-float());
+                        }
+                    }
                 }
             }
 
@@ -266,7 +278,7 @@ component FieldCard inherits Rectangle {
                 width: 44px;
                 label: "+";
                 pressed => {
-                    root.value = root.value + root.step > root.maximum ? root.maximum : root.value + root.step;
+                    root.value = root.snap_and_clamp(root.value + root.step);
                 }
             }
         }
@@ -276,6 +288,8 @@ component FieldCard inherits Rectangle {
 export component ProfileEditorWindow inherits Window {
     in-out property <string> profile_name;
     in-out property <string> profile_path;
+    in property <[string]> profile_options;
+    in-out property <int> selected_profile_index: 0;
     in-out property <string> notes;
     in-out property <string> status_message;
     in-out property <string> bridge_status;
@@ -283,11 +297,56 @@ export component ProfileEditorWindow inherits Window {
     in-out property <string> runtime_poll_summary;
     in-out property <string> steering_device_summary;
     in-out property <string> hot_reload_summary;
+    in-out property <string> runtime_routing_status;
+    in-out property <string> runtime_routing_source;
+    in-out property <string> runtime_preflight_status;
+    in-out property <bool> experimental_slip_enabled: false;
+    in-out property <float> experimental_slip_steering_rate_threshold;
+    in-out property <float> experimental_slip_steering_angle_threshold;
+    in-out property <float> experimental_slip_force_drop_threshold;
+    in-out property <float> experimental_slip_release_strength;
+    in-out property <float> experimental_slip_attack_ms;
+    in-out property <float> experimental_slip_recovery_ms;
+    in-out property <float> experimental_slip_min_force_floor;
+    in-out property <bool> experimental_slip_apply_constant: true;
+    in-out property <bool> experimental_slip_apply_spring: true;
+    in-out property <bool> experimental_slip_apply_damper: false;
+    in-out property <bool> experimental_torque_steer_enabled: false;
+    in-out property <float> experimental_torque_steer_strength;
+    in-out property <float> experimental_torque_steer_threshold;
+    in-out property <bool> experimental_brake_imbalance_enabled: false;
+    in-out property <float> experimental_brake_imbalance_strength;
+    in-out property <float> experimental_brake_imbalance_threshold;
+    in-out property <bool> experimental_understeer_scrub_enabled: false;
+    in-out property <float> experimental_understeer_scrub_strength;
+    in-out property <float> experimental_understeer_scrub_threshold;
+    in-out property <float> experimental_understeer_scrub_attack_ms;
+    in-out property <float> experimental_understeer_scrub_recovery_ms;
+    in-out property <bool> experimental_rear_lightness_enabled: false;
+    in-out property <float> experimental_rear_lightness_strength;
+    in-out property <float> experimental_rear_lightness_threshold;
+    in-out property <float> experimental_rear_lightness_attack_ms;
+    in-out property <float> experimental_rear_lightness_recovery_ms;
+    in-out property <bool> experimental_curb_asymmetry_enabled: false;
+    in-out property <float> experimental_curb_asymmetry_strength;
+    in-out property <float> experimental_curb_asymmetry_threshold;
+    in-out property <bool> experimental_snap_oversteer_enabled: false;
+    in-out property <float> experimental_snap_oversteer_strength;
+    in-out property <float> experimental_snap_oversteer_threshold;
+    in-out property <float> experimental_snap_oversteer_attack_ms;
+    in-out property <float> experimental_snap_oversteer_recovery_ms;
+    in property <[string]> compare_profile_options;
+    in-out property <int> selected_compare_profile_index: 0;
+    in-out property <bool> compare_show_all: false;
+    in-out property <string> compare_result;
     in-out property <string> selected_steering_device_label;
     in-out property <string> diagnostics_status;
     in-out property <string> diagnostics_event_count;
     in-out property <string> diagnostics_log_path;
     in-out property <string> diagnostics_events;
+    in-out property <string> diagnostics_workflow_hint;
+    in-out property <string> diagnostics_last_session_export;
+    in-out property <string> diagnostics_last_bundle_export;
     in-out property <string> observability_source_label;
     in-out property <string> telemetry_status;
     in-out property <string> telemetry_uptime;
@@ -295,6 +354,9 @@ export component ProfileEditorWindow inherits Window {
     in-out property <string> telemetry_command_rate;
     in-out property <string> telemetry_steering;
     in-out property <string> telemetry_peak_force;
+    in-out property <string> telemetry_calibration_profile;
+    in-out property <string> telemetry_calibration_gain;
+    in-out property <string> telemetry_filter_coefficient;
     in-out property <string> telemetry_clamp_status;
     in-out property <string> telemetry_saturation_status;
     in-out property <string> telemetry_packet_trend;
@@ -327,17 +389,45 @@ export component ProfileEditorWindow inherits Window {
     in-out property <float> spring_saturation;
     in-out property <float> damper_coefficient;
     in-out property <float> damper_saturation;
+    in-out property <string> calibration_preset_label;
+    in property <[string]> calibration_preset_options;
+    in-out property <int> selected_calibration_preset_index: 0;
+    in-out property <int> calibration_workflow_step: 0;
+    in-out property <string> calibration_workflow_step_label;
+    in-out property <string> calibration_workflow_title;
+    in-out property <string> calibration_workflow_detail;
+    in-out property <float> calibration_output_gain;
+    in-out property <float> calibration_const_gain;
+    in-out property <float> calibration_sine_gain;
+    in-out property <float> calibration_spring_gain;
+    in-out property <float> calibration_damper_gain;
+    in-out property <float> calibration_steering_center_offset;
+    in-out property <float> calibration_steering_range;
+    in-out property <float> calibration_steering_curve;
 
     callback save_requested();
+    callback select_profile_requested(int);
     callback start_bridge_requested();
     callback stop_bridge_requested();
     callback select_steering_device_requested(int);
     callback clear_steering_device_requested();
+    callback select_compare_profile_requested(int);
+    callback toggle_compare_show_all_requested();
+    callback run_profile_compare_requested();
     callback export_session_requested();
+    callback export_bundle_requested();
     callback replay_latest_session_requested();
     callback return_to_live_session_requested();
+    callback apply_calibration_preset_requested(int);
+    callback calibration_guide_previous_requested();
+    callback calibration_guide_next_requested();
+    callback calibration_guide_apply_requested();
+    callback auto_calibration_requested();
+    callback run_calibration_sweep_requested();
     callback toggle_hot_reload_requested();
     callback toggle_close_to_taskbar_requested();
+    callback install_vjoy_requested();
+    callback open_vjoy_config_requested();
     callback quit_and_shutdown_requested();
 
     preferred-width: 1500px;
@@ -386,7 +476,7 @@ export component ProfileEditorWindow inherits Window {
                     NavCard {
                         label: "Force Profile";
                         tag: "FX";
-                        selected: root.current_section >= 1 && root.current_section <= 3;
+                        selected: root.current_section >= 1 && root.current_section <= 4;
                         pressed => {
                             root.current_section = 1;
                         }
@@ -402,25 +492,41 @@ export component ProfileEditorWindow inherits Window {
                     NavCard {
                         label: "Settings";
                         tag: "ST";
-                        selected: root.current_section == 4;
-                        pressed => {
-                            root.current_section = 4;
-                        }
-                    }
-                    NavCard {
-                        label: "Diagnostics";
-                        tag: "DG";
                         selected: root.current_section == 5;
                         pressed => {
                             root.current_section = 5;
                         }
                     }
                     NavCard {
-                        label: "Telemetry";
-                        tag: "TM";
+                        label: "Diagnostics";
+                        tag: "DG";
                         selected: root.current_section == 6;
                         pressed => {
                             root.current_section = 6;
+                        }
+                    }
+                    NavCard {
+                        label: "Compare";
+                        tag: "CP";
+                        selected: root.current_section == 7;
+                        pressed => {
+                            root.current_section = 7;
+                        }
+                    }
+                    NavCard {
+                        label: "Expirimental";
+                        tag: "EX";
+                        selected: root.current_section == 8;
+                        pressed => {
+                            root.current_section = 8;
+                        }
+                    }
+                    NavCard {
+                        label: "Telemetry";
+                        tag: "TM";
+                        selected: root.current_section == 9;
+                        pressed => {
+                            root.current_section = 9;
                         }
                     }
 
@@ -468,25 +574,25 @@ export component ProfileEditorWindow inherits Window {
                     background: #0d131c;
                     border-color: #18202d;
                     border-width: 1px;
-                    min-height: 184px;
+                    min-height: 132px;
 
                     VerticalLayout {
-                        padding: 22px;
-                        spacing: 14px;
+                        padding: 16px;
+                        spacing: 10px;
 
                         HorizontalLayout {
                             spacing: 14px;
 
                             Rectangle {
-                                width: 68px;
-                                height: 68px;
+                                width: 52px;
+                                height: 52px;
                                 border-radius: 22px;
                                 background: #d39a2d;
 
                                 Text {
                                     text: "TB";
                                     color: #1a1305;
-                                    font-size: 24px;
+                                    font-size: 20px;
                                     font-weight: 900;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
@@ -499,7 +605,7 @@ export component ProfileEditorWindow inherits Window {
                                 Text {
                                     text: profile_name;
                                     color: #f9fbff;
-                                    font-size: 30px;
+                                    font-size: 24px;
                                     font-weight: 800;
                                 }
 
@@ -550,9 +656,39 @@ export component ProfileEditorWindow inherits Window {
                                 background: #121925;
                                 border-color: #1d2533;
                                 border-width: 1px;
-                                min-height: 78px;
+                                min-height: 62px;
                                 HorizontalLayout {
-                                    padding: 16px;
+                                    padding: 12px;
+                                    spacing: 10px;
+
+                                    VerticalLayout {
+                                        spacing: 6px;
+
+                                        Text {
+                                            text: "Profile File";
+                                            color: #c8d0df;
+                                            font-size: 13px;
+                                        }
+
+                                        ComboBox {
+                                            model: root.profile_options;
+                                            current-index: root.selected_profile_index < 0 ? 0 : root.selected_profile_index;
+                                            selected => {
+                                                root.select_profile_requested(self.current-index);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                border-radius: 18px;
+                                background: #121925;
+                                border-color: #1d2533;
+                                border-width: 1px;
+                                min-height: 62px;
+                                HorizontalLayout {
+                                    padding: 12px;
                                     spacing: 10px;
 
                                     VerticalLayout {
@@ -576,9 +712,9 @@ export component ProfileEditorWindow inherits Window {
                                 background: #121925;
                                 border-color: #1d2533;
                                 border-width: 1px;
-                                min-height: 78px;
+                                min-height: 62px;
                                 HorizontalLayout {
-                                    padding: 16px;
+                                    padding: 12px;
                                     spacing: 10px;
 
                                     VerticalLayout {
@@ -596,26 +732,26 @@ export component ProfileEditorWindow inherits Window {
                                     }
                                 }
                             }
+
                         }
 
-                        Text {
+                        LineEdit {
                             text: status_message;
-                            color: #90b2ff;
-                            font-size: 13px;
+                            read-only: true;
                         }
                     }
                 }
 
-                Rectangle {
+                if root.current_section == 0 : Rectangle {
                     border-radius: 28px;
                     background: #0d131c;
                     border-color: #18202d;
                     border-width: 1px;
-                    min-height: 166px;
+                    min-height: 154px;
 
                     VerticalLayout {
-                        padding: 20px;
-                        spacing: 14px;
+                        padding: 16px;
+                        spacing: 12px;
 
                         HorizontalLayout {
                             spacing: 14px;
@@ -626,11 +762,11 @@ export component ProfileEditorWindow inherits Window {
                                 border-color: bridge_running ? #348452 : #232b39;
                                 border-width: 1px;
                                 min-width: 240px;
-                                min-height: 84px;
+                                min-height: 72px;
 
                                 VerticalLayout {
-                                    padding: 16px;
-                                    spacing: 6px;
+                                    padding: 14px;
+                                    spacing: 5px;
 
                                     Text {
                                         text: "Bridge Status";
@@ -642,7 +778,7 @@ export component ProfileEditorWindow inherits Window {
                                     Text {
                                         text: bridge_status;
                                         color: bridge_running ? #d9ffe5 : #eef3ff;
-                                        font-size: 19px;
+                                        font-size: 18px;
                                         font-weight: 800;
                                     }
                                 }
@@ -653,11 +789,11 @@ export component ProfileEditorWindow inherits Window {
                                 background: #111722;
                                 border-color: #1d2533;
                                 border-width: 1px;
-                                min-height: 84px;
+                                min-height: 72px;
 
                                 VerticalLayout {
-                                    padding: 16px;
-                                    spacing: 6px;
+                                    padding: 14px;
+                                    spacing: 5px;
 
                                     Text {
                                         text: "Runtime Detail";
@@ -699,6 +835,126 @@ export component ProfileEditorWindow inherits Window {
                                 value: bridge_running ? "Live session" : "Editor only";
                             }
                         }
+                    }
+                }
+
+                if root.current_section != 0 : Rectangle {
+                    border-radius: 24px;
+                    background: #0d131c;
+                    border-color: #18202d;
+                    border-width: 1px;
+                    min-height: 74px;
+
+                    HorizontalLayout {
+                        padding: 12px;
+                        spacing: 10px;
+
+                        Rectangle {
+                            border-radius: 14px;
+                            background: bridge_running ? #16301e : #151b24;
+                            border-color: bridge_running ? #348452 : #232b39;
+                            border-width: 1px;
+                            min-width: 180px;
+
+                            HorizontalLayout {
+                                padding: 10px;
+                                spacing: 8px;
+
+                                Text {
+                                    text: "Status";
+                                    color: #8d96a8;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                }
+
+                                Text {
+                                    text: bridge_status;
+                                    color: bridge_running ? #d9ffe5 : #eef3ff;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            border-radius: 14px;
+                            background: #111722;
+                            border-color: #1d2533;
+                            border-width: 1px;
+
+                            HorizontalLayout {
+                                padding: 10px;
+                                spacing: 8px;
+
+                                Text {
+                                    text: "Poll";
+                                    color: #8d96a8;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                }
+
+                                Text {
+                                    text: runtime_poll_summary;
+                                    color: #eef3ff;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            border-radius: 14px;
+                            background: #111722;
+                            border-color: #1d2533;
+                            border-width: 1px;
+
+                            HorizontalLayout {
+                                padding: 10px;
+                                spacing: 8px;
+
+                                Text {
+                                    text: "Hot reload";
+                                    color: #8d96a8;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                }
+
+                                Text {
+                                    text: hot_reload_summary;
+                                    color: #fff4d8;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            border-radius: 14px;
+                            background: #111722;
+                            border-color: #1d2533;
+                            border-width: 1px;
+
+                            HorizontalLayout {
+                                padding: 10px;
+                                spacing: 8px;
+
+                                Text {
+                                    text: "Mode";
+                                    color: #8d96a8;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                }
+
+                                Text {
+                                    text: bridge_running ? "Live" : "Editor";
+                                    color: #eef3ff;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+
+                        Rectangle { }
                     }
                 }
 
@@ -749,7 +1005,7 @@ export component ProfileEditorWindow inherits Window {
                                 }
 
                                 SegmentButton {
-                                    label: "Settings";
+                                    label: "Calibration";
                                     selected: root.current_section == 4;
                                     pressed => {
                                         root.current_section = 4;
@@ -757,7 +1013,7 @@ export component ProfileEditorWindow inherits Window {
                                 }
 
                                 SegmentButton {
-                                    label: "Diagnostics";
+                                    label: "Settings";
                                     selected: root.current_section == 5;
                                     pressed => {
                                         root.current_section = 5;
@@ -765,10 +1021,34 @@ export component ProfileEditorWindow inherits Window {
                                 }
 
                                 SegmentButton {
-                                    label: "Telemetry";
+                                    label: "Diagnostics";
                                     selected: root.current_section == 6;
                                     pressed => {
                                         root.current_section = 6;
+                                    }
+                                }
+
+                                SegmentButton {
+                                    label: "Compare";
+                                    selected: root.current_section == 7;
+                                    pressed => {
+                                        root.current_section = 7;
+                                    }
+                                }
+
+                                SegmentButton {
+                                    label: "Expirimental";
+                                    selected: root.current_section == 8;
+                                    pressed => {
+                                        root.current_section = 8;
+                                    }
+                                }
+
+                                SegmentButton {
+                                    label: "Telemetry";
+                                    selected: root.current_section == 9;
+                                    pressed => {
+                                        root.current_section = 9;
                                     }
                                 }
                             }
@@ -849,6 +1129,103 @@ export component ProfileEditorWindow inherits Window {
                                                     font-size: 13px;
                                                     visible: device_catalog_message != "";
                                                 }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        border-radius: 24px;
+                                        background: #121925;
+                                        border-color: #1d2533;
+                                        border-width: 1px;
+                                        min-height: 136px;
+
+                                        VerticalLayout {
+                                            padding: 18px;
+                                            spacing: 10px;
+
+                                            Text {
+                                                text: "Routing And Preflight";
+                                                color: #f6f8fb;
+                                                font-size: 17px;
+                                                font-weight: 700;
+                                            }
+
+                                            LineEdit {
+                                                text: runtime_routing_status;
+                                                read-only: true;
+                                            }
+
+                                            LineEdit {
+                                                text: runtime_routing_source;
+                                                read-only: true;
+                                            }
+
+                                            LineEdit {
+                                                text: runtime_preflight_status;
+                                                read-only: true;
+                                            }
+
+                                            HorizontalLayout {
+                                                spacing: 10px;
+
+                                                ActionButton {
+                                                    width: 150px;
+                                                    label: "Install vJoy";
+                                                    pressed => {
+                                                        root.install_vjoy_requested();
+                                                    }
+                                                }
+
+                                                ActionButton {
+                                                    width: 160px;
+                                                    label: "Open vJoyConf";
+                                                    pressed => {
+                                                        root.open_vjoy_config_requested();
+                                                    }
+                                                }
+
+                                                Text {
+                                                    text: "Runs Windows package install if available.";
+                                                    color: #7f8aa0;
+                                                    font-size: 12px;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        border-radius: 24px;
+                                        background: #121925;
+                                        border-color: #1d2533;
+                                        border-width: 1px;
+                                        min-height: 170px;
+
+                                        VerticalLayout {
+                                            padding: 18px;
+                                            spacing: 10px;
+
+                                            Text {
+                                                text: "Plug And Play";
+                                                color: #f6f8fb;
+                                                font-size: 12px;
+                                                font-weight: 800;
+                                            }
+
+                                            Text {
+                                                text: "No Setup Wizard Required";
+                                                color: #f6f8fb;
+                                                font-size: 17px;
+                                                font-weight: 700;
+                                            }
+
+                                            Text {
+                                                text: "Select steering input, save profile, and launch. Diagnostics and replay workflows stay optional in the Diagnostics section.";
+                                                color: #d9e2f2;
+                                                font-size: 13px;
+                                                wrap: word-wrap;
                                             }
                                         }
                                     }
@@ -1088,6 +1465,236 @@ export component ProfileEditorWindow inherits Window {
                                     spacing: 18px;
 
                                     Text {
+                                        text: "Calibration";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
+                                    }
+
+                                    Text {
+                                        text: "Use calibration to match the wheel, not the game packet. Output gain sets overall authority, while center, range, and curve tune how steering-state filtering ramps away from center.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 168px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 12px;
+
+                                                Text {
+                                                    text: "Preset Baseline";
+                                                    color: #f6f8fb;
+                                                    font-size: 17px;
+                                                    font-weight: 700;
+                                                }
+
+                                                ComboBox {
+                                                    model: root.calibration_preset_options;
+                                                    current-index: root.selected_calibration_preset_index < 0 ? 0 : root.selected_calibration_preset_index;
+                                                    selected => {
+                                                        root.apply_calibration_preset_requested(self.current-index);
+                                                    }
+                                                }
+
+                                                Text {
+                                                    text: "Current preset: " + calibration_preset_label;
+                                                    color: #d9e2f2;
+                                                    font-size: 13px;
+                                                    wrap: word-wrap;
+                                                }
+
+                                                ActionButton {
+                                                    width: 176px;
+                                                    primary: true;
+                                                    label: "Auto Calibrate";
+                                                    pressed => {
+                                                        root.auto_calibration_requested();
+                                                    }
+                                                }
+
+                                                ActionButton {
+                                                    width: 176px;
+                                                    label: "Run Sweep (4s)";
+                                                    pressed => {
+                                                        root.run_calibration_sweep_requested();
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 168px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 10px;
+
+                                                Text {
+                                                    text: calibration_workflow_step_label;
+                                                    color: #d39a2d;
+                                                    font-size: 12px;
+                                                    font-weight: 800;
+                                                }
+
+                                                Text {
+                                                    text: calibration_workflow_title;
+                                                    color: #f6f8fb;
+                                                    font-size: 17px;
+                                                    font-weight: 700;
+                                                }
+
+                                                Text {
+                                                    text: calibration_workflow_detail;
+                                                    color: #d9e2f2;
+                                                    font-size: 13px;
+                                                    wrap: word-wrap;
+                                                }
+
+                                                HorizontalLayout {
+                                                    spacing: 12px;
+
+                                                    ActionButton {
+                                                        width: 84px;
+                                                        label: "Back";
+                                                        pressed => {
+                                                            root.calibration_guide_previous_requested();
+                                                        }
+                                                    }
+
+                                                    ActionButton {
+                                                        width: 84px;
+                                                        label: "Next";
+                                                        pressed => {
+                                                            root.calibration_guide_next_requested();
+                                                        }
+                                                    }
+
+                                                    Rectangle { }
+
+                                                    ActionButton {
+                                                        width: 156px;
+                                                        primary: true;
+                                                        label: "Apply Step Assist";
+                                                        pressed => {
+                                                            root.calibration_guide_apply_requested();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Output Gain";
+                                            subtitle: "Global gain applied across translated constant, periodic, spring, and damper output.";
+                                            minimum: 0;
+                                            maximum: 2;
+                                            step: 0.05;
+                                            value <=> root.calibration_output_gain;
+                                        }
+
+                                        FieldCard {
+                                            title: "Center Offset";
+                                            subtitle: "Shift the steering-state center used by force shaping. Positive values move the effective center right.";
+                                            minimum: -0.25;
+                                            maximum: 0.25;
+                                            step: 0.01;
+                                            value <=> root.calibration_steering_center_offset;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Steering Range";
+                                            subtitle: "How much travel it takes before steering-state filtering reaches full force away from center.";
+                                            minimum: 0.25;
+                                            maximum: 2;
+                                            step: 0.05;
+                                            value <=> root.calibration_steering_range;
+                                        }
+
+                                        FieldCard {
+                                            title: "Steering Curve";
+                                            subtitle: "Response curve for center-to-edge force shaping. Lower ramps harder early; higher stays softer near center.";
+                                            minimum: 0.25;
+                                            maximum: 3;
+                                            step: 0.05;
+                                            value <=> root.calibration_steering_curve;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Constant Gain";
+                                            subtitle: "Per-effect multiplier for constant-force translation after output gain.";
+                                            minimum: 0;
+                                            maximum: 2;
+                                            step: 0.05;
+                                            value <=> root.calibration_const_gain;
+                                        }
+
+                                        FieldCard {
+                                            title: "Periodic Gain";
+                                            subtitle: "Per-effect multiplier for periodic and vibration translation after output gain.";
+                                            minimum: 0;
+                                            maximum: 2;
+                                            step: 0.05;
+                                            value <=> root.calibration_sine_gain;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Spring Gain";
+                                            subtitle: "Per-effect multiplier for spring condition translation after output gain.";
+                                            minimum: 0;
+                                            maximum: 2;
+                                            step: 0.05;
+                                            value <=> root.calibration_spring_gain;
+                                        }
+
+                                        FieldCard {
+                                            title: "Damper Gain";
+                                            subtitle: "Per-effect multiplier for damper condition translation after output gain.";
+                                            minimum: 0;
+                                            maximum: 2;
+                                            step: 0.05;
+                                            value <=> root.calibration_damper_gain;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.current_section == 5 : Rectangle {
+                                background: transparent;
+
+                                VerticalLayout {
+                                    spacing: 18px;
+
+                                    Text {
                                         text: "Settings";
                                         color: #ffffff;
                                         font-size: 24px;
@@ -1173,7 +1780,7 @@ export component ProfileEditorWindow inherits Window {
                                 }
                             }
 
-                            if root.current_section == 5 : Rectangle {
+                            if root.current_section == 6 : Rectangle {
                                 background: transparent;
 
                                 VerticalLayout {
@@ -1227,6 +1834,15 @@ export component ProfileEditorWindow inherits Window {
                                         }
 
                                         ActionButton {
+                                            width: 188px;
+                                            primary: true;
+                                            label: "Export Debug Bundle";
+                                            pressed => {
+                                                root.export_bundle_requested();
+                                            }
+                                        }
+
+                                        ActionButton {
                                             width: 202px;
                                             primary: false;
                                             label: "Replay Latest Export";
@@ -1250,7 +1866,7 @@ export component ProfileEditorWindow inherits Window {
                                         background: #121925;
                                         border-color: #1d2533;
                                         border-width: 1px;
-                                        min-height: 106px;
+                                        min-height: 136px;
 
                                         VerticalLayout {
                                             padding: 18px;
@@ -1268,6 +1884,43 @@ export component ProfileEditorWindow inherits Window {
                                                 color: #d9e2f2;
                                                 font-size: 13px;
                                                 wrap: word-wrap;
+                                            }
+
+                                            Text {
+                                                text: diagnostics_workflow_hint;
+                                                color: #7f8aa0;
+                                                font-size: 12px;
+                                                wrap: word-wrap;
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        border-radius: 24px;
+                                        background: #121925;
+                                        border-color: #1d2533;
+                                        border-width: 1px;
+                                        min-height: 136px;
+
+                                        VerticalLayout {
+                                            padding: 18px;
+                                            spacing: 10px;
+
+                                            Text {
+                                                text: "Export Locations";
+                                                color: #f6f8fb;
+                                                font-size: 17px;
+                                                font-weight: 700;
+                                            }
+
+                                            LineEdit {
+                                                text: diagnostics_last_session_export;
+                                                read-only: true;
+                                            }
+
+                                            LineEdit {
+                                                text: diagnostics_last_bundle_export;
+                                                read-only: true;
                                             }
                                         }
                                     }
@@ -1301,7 +1954,518 @@ export component ProfileEditorWindow inherits Window {
                                 }
                             }
 
-                            if root.current_section == 6 : Rectangle {
+                            if root.current_section == 7 : Rectangle {
+                                background: transparent;
+
+                                VerticalLayout {
+                                    spacing: 18px;
+
+                                    Text {
+                                        text: "Profile Compare";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
+                                    }
+
+                                    Text {
+                                        text: "Run a quick A/B diff against another saved profile to compare routing and force-calibration values.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 14px;
+
+                                        ComboBox {
+                                            model: root.compare_profile_options;
+                                            current-index: root.selected_compare_profile_index < 0 ? 0 : root.selected_compare_profile_index;
+                                            selected => {
+                                                root.select_compare_profile_requested(self.current-index);
+                                            }
+                                        }
+
+                                        ActionButton {
+                                            width: 198px;
+                                            primary: true;
+                                            label: "Run A/B Diff";
+                                            pressed => {
+                                                root.run_profile_compare_requested();
+                                            }
+                                        }
+
+                                        ActionButton {
+                                            width: 184px;
+                                            primary: false;
+                                            label: compare_show_all ? "Show Changed Only" : "Show All Fields";
+                                            pressed => {
+                                                root.toggle_compare_show_all_requested();
+                                            }
+                                        }
+
+                                        Rectangle { }
+                                    }
+
+                                    Rectangle {
+                                        border-radius: 24px;
+                                        background: #121925;
+                                        border-color: #1d2533;
+                                        border-width: 1px;
+                                        min-height: 520px;
+
+                                        VerticalLayout {
+                                            padding: 18px;
+                                            spacing: 12px;
+
+                                            Text {
+                                                text: "A/B Diff Report";
+                                                color: #f6f8fb;
+                                                font-size: 17px;
+                                                font-weight: 700;
+                                            }
+
+                                            Text {
+                                                text: compare_result;
+                                                color: #d9e2f2;
+                                                font-size: 13px;
+                                                wrap: word-wrap;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.current_section == 8 : Rectangle {
+                                background: transparent;
+
+                                VerticalLayout {
+                                    spacing: 18px;
+
+                                    Text {
+                                        text: "Expirimental Effects";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
+                                    }
+
+                                    Text {
+                                        text: "Heuristic traction-release modeling from steering and force changes. Tune per car and sim.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        ToggleCard {
+                                            title: "Traction Loss Release";
+                                            subtitle: "Reduce aligning/centering force when steering snap + force drop suggests grip breakaway.";
+                                            active: experimental_slip_enabled;
+                                            pressed => {
+                                                root.experimental_slip_enabled = !root.experimental_slip_enabled;
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            border-radius: 24px;
+                                            background: #121925;
+                                            border-color: #1d2533;
+                                            border-width: 1px;
+                                            min-height: 168px;
+
+                                            VerticalLayout {
+                                                padding: 18px;
+                                                spacing: 12px;
+
+                                                ToggleCard {
+                                                    title: "Affects Constant";
+                                                    subtitle: "Primary aligning torque release path.";
+                                                    active: experimental_slip_apply_constant;
+                                                    pressed => {
+                                                        root.experimental_slip_apply_constant = !root.experimental_slip_apply_constant;
+                                                    }
+                                                }
+
+                                                ToggleCard {
+                                                    title: "Affects Spring";
+                                                    subtitle: "Centering drop when breakaway is inferred.";
+                                                    active: experimental_slip_apply_spring;
+                                                    pressed => {
+                                                        root.experimental_slip_apply_spring = !root.experimental_slip_apply_spring;
+                                                    }
+                                                }
+
+                                                ToggleCard {
+                                                    title: "Affects Damper";
+                                                    subtitle: "Optional damping release during slip events.";
+                                                    active: experimental_slip_apply_damper;
+                                                    pressed => {
+                                                        root.experimental_slip_apply_damper = !root.experimental_slip_apply_damper;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Steering Rate Threshold";
+                                            subtitle: "Normalized turns-per-second trigger threshold (0-8).";
+                                            minimum: 0;
+                                            maximum: 8;
+                                            step: 0.05;
+                                            value <=> root.experimental_slip_steering_rate_threshold;
+                                        }
+
+                                        FieldCard {
+                                            title: "Steering Angle Threshold";
+                                            subtitle: "Normalized steering angle threshold (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_slip_steering_angle_threshold;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Force Drop Threshold";
+                                            subtitle: "Minimum force-proxy drop required to trigger release (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_slip_force_drop_threshold;
+                                        }
+
+                                        FieldCard {
+                                            title: "Release Strength";
+                                            subtitle: "Maximum release multiplier when slip is fully active (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_slip_release_strength;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Attack (ms)";
+                                            subtitle: "How quickly force gives out once triggered.";
+                                            minimum: 10;
+                                            maximum: 2000;
+                                            step: 10;
+                                            value <=> root.experimental_slip_attack_ms;
+                                        }
+
+                                        FieldCard {
+                                            title: "Recovery (ms)";
+                                            subtitle: "How quickly force rebuilds after slip settles.";
+                                            minimum: 10;
+                                            maximum: 4000;
+                                            step: 10;
+                                            value <=> root.experimental_slip_recovery_ms;
+                                        }
+                                    }
+
+                                    FieldCard {
+                                        title: "Minimum Force Floor";
+                                        subtitle: "Fraction of force retained during release (0 = can fully go light).";
+                                        minimum: 0;
+                                        maximum: 1;
+                                        step: 0.02;
+                                        value <=> root.experimental_slip_min_force_floor;
+                                    }
+
+                                    Rectangle {
+                                        height: 1px;
+                                        background: #1d2533;
+                                    }
+
+                                    Text {
+                                        text: "Inferred Dynamics Pack";
+                                        color: #ffffff;
+                                        font-size: 24px;
+                                        font-weight: 800;
+                                    }
+
+                                    Text {
+                                        text: "Each effect is independently toggleable and tunable. Start low and increment strength gradually.";
+                                        color: #7f8aa0;
+                                        font-size: 14px;
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        ToggleCard {
+                                            title: "Torque Steer";
+                                            subtitle: "Directional steering-weight bias on fast steering-rate events.";
+                                            active: experimental_torque_steer_enabled;
+                                            pressed => {
+                                                root.experimental_torque_steer_enabled = !root.experimental_torque_steer_enabled;
+                                            }
+                                        }
+
+                                        ToggleCard {
+                                            title: "Brake Imbalance";
+                                            subtitle: "Yaw-like pull when rapid force drop occurs off-center.";
+                                            active: experimental_brake_imbalance_enabled;
+                                            pressed => {
+                                                root.experimental_brake_imbalance_enabled = !root.experimental_brake_imbalance_enabled;
+                                            }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Torque Steer Strength";
+                                            subtitle: "Directional constant-force bias amount (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_torque_steer_strength;
+                                        }
+
+                                        FieldCard {
+                                            title: "Torque Steer Trigger";
+                                            subtitle: "Steering-rate trigger threshold (0-8).";
+                                            minimum: 0;
+                                            maximum: 8;
+                                            step: 0.05;
+                                            value <=> root.experimental_torque_steer_threshold;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Brake Imbalance Strength";
+                                            subtitle: "Directional pull intensity (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_brake_imbalance_strength;
+                                        }
+
+                                        FieldCard {
+                                            title: "Brake Imbalance Trigger";
+                                            subtitle: "Force-drop trigger threshold (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_brake_imbalance_threshold;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        ToggleCard {
+                                            title: "Understeer Scrub";
+                                            subtitle: "Flattens spring/damper authority when angle rises but force stays flat.";
+                                            active: experimental_understeer_scrub_enabled;
+                                            pressed => {
+                                                root.experimental_understeer_scrub_enabled = !root.experimental_understeer_scrub_enabled;
+                                            }
+                                        }
+
+                                        ToggleCard {
+                                            title: "Rear Lightness";
+                                            subtitle: "Transient release on fast steering reversals.";
+                                            active: experimental_rear_lightness_enabled;
+                                            pressed => {
+                                                root.experimental_rear_lightness_enabled = !root.experimental_rear_lightness_enabled;
+                                            }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Understeer Strength";
+                                            subtitle: "How much spring/damper force is reduced (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_understeer_scrub_strength;
+                                        }
+
+                                        FieldCard {
+                                            title: "Understeer Trigger";
+                                            subtitle: "Steering-angle threshold (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_understeer_scrub_threshold;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Understeer Attack (ms)";
+                                            subtitle: "How quickly scrub engages.";
+                                            minimum: 10;
+                                            maximum: 2000;
+                                            step: 10;
+                                            value <=> root.experimental_understeer_scrub_attack_ms;
+                                        }
+
+                                        FieldCard {
+                                            title: "Understeer Recovery (ms)";
+                                            subtitle: "How quickly scrub fades.";
+                                            minimum: 10;
+                                            maximum: 4000;
+                                            step: 10;
+                                            value <=> root.experimental_understeer_scrub_recovery_ms;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Rear Lightness Strength";
+                                            subtitle: "Release intensity on reversal events (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_rear_lightness_strength;
+                                        }
+
+                                        FieldCard {
+                                            title: "Rear Lightness Trigger";
+                                            subtitle: "Steering-rate reversal threshold (0-8).";
+                                            minimum: 0;
+                                            maximum: 8;
+                                            step: 0.05;
+                                            value <=> root.experimental_rear_lightness_threshold;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Rear Lightness Attack (ms)";
+                                            subtitle: "How quickly lightness engages.";
+                                            minimum: 10;
+                                            maximum: 2000;
+                                            step: 10;
+                                            value <=> root.experimental_rear_lightness_attack_ms;
+                                        }
+
+                                        FieldCard {
+                                            title: "Rear Lightness Recovery (ms)";
+                                            subtitle: "How quickly lightness fades.";
+                                            minimum: 10;
+                                            maximum: 4000;
+                                            step: 10;
+                                            value <=> root.experimental_rear_lightness_recovery_ms;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        ToggleCard {
+                                            title: "Curb Asymmetry";
+                                            subtitle: "Directional curb-hit intensity based on wheel side and steer angle.";
+                                            active: experimental_curb_asymmetry_enabled;
+                                            pressed => {
+                                                root.experimental_curb_asymmetry_enabled = !root.experimental_curb_asymmetry_enabled;
+                                            }
+                                        }
+
+                                        ToggleCard {
+                                            title: "Snap Oversteer Catch";
+                                            subtitle: "Brief spring/damper rebound boost after traction release settles.";
+                                            active: experimental_snap_oversteer_enabled;
+                                            pressed => {
+                                                root.experimental_snap_oversteer_enabled = !root.experimental_snap_oversteer_enabled;
+                                            }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Curb Asymmetry Strength";
+                                            subtitle: "Directional periodic amplitude bias (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_curb_asymmetry_strength;
+                                        }
+
+                                        FieldCard {
+                                            title: "Curb Asymmetry Trigger";
+                                            subtitle: "Steering-angle threshold for asymmetry (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_curb_asymmetry_threshold;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Snap Oversteer Strength";
+                                            subtitle: "Catch boost magnitude (0-1).";
+                                            minimum: 0;
+                                            maximum: 1;
+                                            step: 0.02;
+                                            value <=> root.experimental_snap_oversteer_strength;
+                                        }
+
+                                        FieldCard {
+                                            title: "Snap Oversteer Trigger";
+                                            subtitle: "Steering-rate trigger threshold (0-8).";
+                                            minimum: 0;
+                                            maximum: 8;
+                                            step: 0.05;
+                                            value <=> root.experimental_snap_oversteer_threshold;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        FieldCard {
+                                            title: "Snap Oversteer Attack (ms)";
+                                            subtitle: "How quickly catch boost appears.";
+                                            minimum: 10;
+                                            maximum: 2000;
+                                            step: 10;
+                                            value <=> root.experimental_snap_oversteer_attack_ms;
+                                        }
+
+                                        FieldCard {
+                                            title: "Snap Oversteer Recovery (ms)";
+                                            subtitle: "How quickly catch boost decays.";
+                                            minimum: 10;
+                                            maximum: 4000;
+                                            step: 10;
+                                            value <=> root.experimental_snap_oversteer_recovery_ms;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.current_section == 9 : Rectangle {
                                 background: transparent;
 
                                 VerticalLayout {
@@ -1349,6 +2513,26 @@ export component ProfileEditorWindow inherits Window {
                                         StatCard {
                                             title: "STEERING";
                                             value: telemetry_steering;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 18px;
+
+                                        StatCard {
+                                            title: "CAL PROFILE";
+                                            value: telemetry_calibration_profile;
+                                        }
+
+                                        StatCard {
+                                            title: "CAL GAIN";
+                                            value: telemetry_calibration_gain;
+                                            highlighted: true;
+                                        }
+
+                                        StatCard {
+                                            title: "FILTER COEFF";
+                                            value: telemetry_filter_coefficient;
                                         }
                                     }
 

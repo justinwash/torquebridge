@@ -174,7 +174,10 @@ unsafe extern "C" fn forza_vjoy_callback(packet: *const c_void, user_data: *mut 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ConditionFfbConfig, ConstFfbConfig, PeriodicFfbConfig, VibrationConfig};
+    use crate::config::{
+        CalibrationConfig, ConditionFfbConfig, ConstFfbConfig, ExperimentalConfig,
+        PeriodicFfbConfig, VibrationConfig,
+    };
     use crate::core::domain::{EffectKind, EffectMetadata, GameEffect};
 
     fn settings() -> FfbParamsConfig {
@@ -209,6 +212,8 @@ mod tests {
                 coefficient: 0.02,
                 saturation: 0.25,
             },
+            calibration: CalibrationConfig::default(),
+            experimental: ExperimentalConfig::default(),
         }
     }
 

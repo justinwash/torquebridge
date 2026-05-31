@@ -11,7 +11,7 @@ use torquebridge::core::domain::{
 use torquebridge::diagnostics::{
     DiagnosticCategory, DiagnosticField, DiagnosticLevel, DiagnosticsLog,
 };
-use torquebridge::effect_engine::EffectEngine;
+use torquebridge::effect_engine::{EffectEngine, steering_filter_coefficient};
 use torquebridge::frontends::forza_vjoy::{
     InputFrame, InputMapper, RegisteredFfbCallback, VJoyDevice,
 };
@@ -64,8 +64,8 @@ enum Command {
         profile: Option<String>,
     },
     Ui {
-        #[arg(long, default_value = "C:/Users/justi/Torquebridge/configuration.json")]
-        config: String,
+        #[arg(long)]
+        config: Option<String>,
         #[arg(long)]
         profile: Option<String>,
     },
@@ -241,7 +241,7 @@ fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&effective_profile)?);
         }
         Command::Ui { config, profile } => {
-            run_profile_editor(&config, profile.as_deref())?;
+            run_profile_editor(config.as_deref(), profile.as_deref())?;
         }
         Command::FeederDemo { config, id } => {
             let controllers = load_controllers(&config)?;
@@ -325,6 +325,7 @@ fn main() -> Result<()> {
             let (controllers, effective_profile) =
                 load_effective_profile(&config, profile.as_deref())?;
             let settings = effective_profile.ffb_parameters.clone();
+            let mut active_settings = settings.clone();
             let cli_steering_device = steering_device;
             let cli_poll_ms = poll_ms;
             let mut steering_device =
@@ -363,6 +364,8 @@ fn main() -> Result<()> {
                 steering_input_label(steering_input.as_ref()),
                 output.info().instance_name.clone(),
             );
+            telemetry.set_calibration(&active_settings);
+            telemetry.refresh_filter_coefficient(&active_settings);
 
             println!(
                 "registered FFB bridge on vJoy device {}; forwarding translated output to DirectInput device '{}' every {} ms",
@@ -463,6 +466,9 @@ fn main() -> Result<()> {
                     match watcher.reload_if_changed() {
                         Ok(Some(reloaded_profile)) => {
                             callback.replace_settings(reloaded_profile.ffb_parameters.clone())?;
+                            active_settings = reloaded_profile.ffb_parameters.clone();
+                            telemetry.set_calibration(&active_settings);
+                            telemetry.refresh_filter_coefficient(&active_settings);
 
                             let next_poll_ms = reloaded_profile.resolved_poll_ms(cli_poll_ms, 5);
                             if next_poll_ms != poll_ms {
@@ -563,6 +569,7 @@ fn main() -> Result<()> {
                     let frame = input.poll_input_frame()?;
                     callback.update_steering_state(frame.x)?;
                     telemetry.set_steering_state(Some(frame.x));
+                    telemetry.refresh_filter_coefficient(&active_settings);
                 }
 
                 if let Some(update) = callback.take_pending_update()? {
@@ -676,13 +683,21 @@ fn load_effective_profile(
     config: &str,
     profile_path: Option<&str>,
 ) -> Result<(Vec<ControllerConfig>, FfbProfile)> {
-    let controllers = load_controllers(config)?;
-    let profile = if let Some(path) = profile_path {
-        load_profile(path)?
-    } else {
-        FfbProfile::from_ffb_settings(load_ffb_settings(&controllers)?)
-    };
+    if let Some(path) = profile_path {
+        let profile = load_profile(path)?;
+        let controllers = match profile
+            .runtime_controllers
+            .clone()
+            .filter(|controllers| !controllers.is_empty())
+        {
+            Some(controllers) => controllers,
+            None => load_controllers(config)?,
+        };
+        return Ok((controllers, profile));
+    }
 
+    let controllers = load_controllers(config)?;
+    let profile = FfbProfile::from_ffb_settings(load_ffb_settings(&controllers)?);
     Ok((controllers, profile))
 }
 
@@ -737,6 +752,16 @@ struct BridgeTelemetryState {
     output_device_name: String,
     poll_ms: u64,
     hot_reload_enabled: bool,
+    calibration_preset: String,
+    calibration_output_gain: f32,
+    calibration_const_gain: f32,
+    calibration_sine_gain: f32,
+    calibration_spring_gain: f32,
+    calibration_damper_gain: f32,
+    calibration_center_offset: f32,
+    calibration_range: f32,
+    calibration_curve: f32,
+    steering_filter_coefficient: Option<f32>,
     peak_force_ratio: f32,
     condition_saturation_ratio: f32,
     peak_force_label: String,
@@ -768,6 +793,16 @@ impl BridgeTelemetryState {
             output_device_name,
             poll_ms,
             hot_reload_enabled,
+            calibration_preset: "Custom".to_string(),
+            calibration_output_gain: 1.0,
+            calibration_const_gain: 1.0,
+            calibration_sine_gain: 1.0,
+            calibration_spring_gain: 1.0,
+            calibration_damper_gain: 1.0,
+            calibration_center_offset: 0.0,
+            calibration_range: 1.0,
+            calibration_curve: 1.0,
+            steering_filter_coefficient: None,
             peak_force_ratio: 0.0,
             condition_saturation_ratio: 0.0,
             peak_force_label: "0%".to_string(),
@@ -788,6 +823,29 @@ impl BridgeTelemetryState {
 
     fn set_steering_state(&mut self, steering_state: Option<i32>) {
         self.steering_state = steering_state;
+    }
+
+    fn set_calibration(&mut self, settings: &FfbParamsConfig) {
+        self.calibration_preset = settings
+            .calibration
+            .preset
+            .clone()
+            .unwrap_or_else(|| "Custom".to_string());
+        self.calibration_output_gain = settings.calibration.output_gain.clamp(0.0, 2.0);
+        self.calibration_const_gain = settings.calibration.const_gain.clamp(0.0, 2.0);
+        self.calibration_sine_gain = settings.calibration.sine_gain.clamp(0.0, 2.0);
+        self.calibration_spring_gain = settings.calibration.spring_gain.clamp(0.0, 2.0);
+        self.calibration_damper_gain = settings.calibration.damper_gain.clamp(0.0, 2.0);
+        self.calibration_center_offset =
+            settings.calibration.steering_center_offset.clamp(-0.5, 0.5);
+        self.calibration_range = settings.calibration.steering_range.clamp(0.25, 2.0);
+        self.calibration_curve = settings.calibration.steering_curve.clamp(0.25, 3.0);
+    }
+
+    fn refresh_filter_coefficient(&mut self, settings: &FfbParamsConfig) {
+        self.steering_filter_coefficient = self.steering_state.map(|state| {
+            steering_filter_coefficient(settings, state, settings.r#const.minimum_coefficient)
+        });
     }
 
     fn record_update(
@@ -853,6 +911,51 @@ impl BridgeTelemetryState {
             DiagnosticField::new("input", self.steering_input_label.clone()),
             DiagnosticField::new("output", self.output_device_name.clone()),
             DiagnosticField::new("poll_ms", format!("{} ms", self.poll_ms)),
+            DiagnosticField::new("calibration_preset", self.calibration_preset.clone()),
+            DiagnosticField::new(
+                "calibration_output_gain",
+                format!("{:.2}x", self.calibration_output_gain),
+            ),
+            DiagnosticField::new(
+                "calibration_const_gain",
+                format!("{:.2}x", self.calibration_const_gain),
+            ),
+            DiagnosticField::new(
+                "calibration_sine_gain",
+                format!("{:.2}x", self.calibration_sine_gain),
+            ),
+            DiagnosticField::new(
+                "calibration_spring_gain",
+                format!("{:.2}x", self.calibration_spring_gain),
+            ),
+            DiagnosticField::new(
+                "calibration_damper_gain",
+                format!("{:.2}x", self.calibration_damper_gain),
+            ),
+            DiagnosticField::new(
+                "calibration_center_offset",
+                format!("{:+.0}%", self.calibration_center_offset * 100.0),
+            ),
+            DiagnosticField::new(
+                "calibration_steering_range",
+                format!("{:.2}x", self.calibration_range),
+            ),
+            DiagnosticField::new(
+                "calibration_steering_curve",
+                format!("{:.2}", self.calibration_curve),
+            ),
+            DiagnosticField::new(
+                "filter_coefficient",
+                self.steering_filter_coefficient
+                    .map(|value| format!("{:.0}%", value * 100.0))
+                    .unwrap_or_else(|| "Unavailable".to_string()),
+            ),
+            DiagnosticField::new(
+                "filter_coefficient_value",
+                self.steering_filter_coefficient
+                    .map(|value| format!("{value:.4}"))
+                    .unwrap_or_else(|| "0.0000".to_string()),
+            ),
             DiagnosticField::new(
                 "hot_reload",
                 if self.hot_reload_enabled {

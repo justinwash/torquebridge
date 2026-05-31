@@ -1,4 +1,4 @@
-use crate::config::FfbParamsConfig;
+use crate::config::{ControllerConfig, FfbParamsConfig};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -72,6 +72,10 @@ pub struct FfbProfile {
     pub steering_device: Option<u32>,
     #[serde(default)]
     pub poll_ms: Option<u64>,
+    #[serde(default)]
+    pub runtime_config_path: Option<String>,
+    #[serde(default)]
+    pub runtime_controllers: Option<Vec<ControllerConfig>>,
     #[serde(rename = "FFBParameters")]
     pub ffb_parameters: FfbParamsConfig,
 }
@@ -90,6 +94,8 @@ impl FfbProfile {
             notes: None,
             steering_device: None,
             poll_ms: None,
+            runtime_config_path: None,
+            runtime_controllers: None,
             ffb_parameters,
         }
     }
@@ -197,7 +203,10 @@ fn read_modified_time(path: &Path) -> Result<SystemTime, ProfileError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ConditionFfbConfig, ConstFfbConfig, PeriodicFfbConfig, VibrationConfig};
+    use crate::config::{
+        CalibrationConfig, ConditionFfbConfig, ConstFfbConfig, ExperimentalConfig,
+        PeriodicFfbConfig, VibrationConfig,
+    };
     use std::time::Duration;
 
     fn settings() -> FfbParamsConfig {
@@ -232,6 +241,8 @@ mod tests {
                 coefficient: 0.02,
                 saturation: 0.0,
             },
+            calibration: CalibrationConfig::default(),
+            experimental: ExperimentalConfig::default(),
         }
     }
 
@@ -243,6 +254,8 @@ mod tests {
             notes: None,
             steering_device: Some(4),
             poll_ms: Some(8),
+            runtime_config_path: Some("configuration.json".to_string()),
+            runtime_controllers: None,
             ffb_parameters: settings(),
         };
 
@@ -257,7 +270,68 @@ mod tests {
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
         assert_eq!(profile.steering_device, None);
         assert_eq!(profile.poll_ms, None);
+        assert_eq!(profile.runtime_config_path, None);
+        assert!(profile.runtime_controllers.is_none());
         assert!((profile.ffb_parameters.r#const.maximum_force - 0.92).abs() < f32::EPSILON);
+        assert!((profile.ffb_parameters.calibration.output_gain - 1.0).abs() < f32::EPSILON);
+        assert!((profile.ffb_parameters.calibration.const_gain - 1.0).abs() < f32::EPSILON);
+        assert!((profile.ffb_parameters.calibration.sine_gain - 1.0).abs() < f32::EPSILON);
+        assert!((profile.ffb_parameters.calibration.spring_gain - 1.0).abs() < f32::EPSILON);
+        assert!((profile.ffb_parameters.calibration.damper_gain - 1.0).abs() < f32::EPSILON);
+        assert!(!profile.ffb_parameters.experimental.traction_loss.enabled);
+    }
+
+    #[test]
+    fn profile_deserialization_defaults_missing_calibration_block() {
+        let json = r#"
+                {
+                    "Version": 1,
+                    "Name": "Baseline",
+                    "PollMs": 5,
+                    "FFBParameters": {
+                        "Const": {
+                            "Magnitude": 1.0,
+                            "MaximumForce": 0.92,
+                            "MinimumForce": 0.03,
+                            "FilterThreshold": 0.18,
+                            "MinimumCoefficient": 0.55
+                        },
+                        "Sine": {
+                            "Magnitude": 0.75,
+                            "Frequency": 1.0,
+                            "MaximumForce": 0.75,
+                            "MinimumForce": 0.0,
+                            "Phase": 0.375,
+                            "EngineVibrations": {
+                                "Frequency": 1.0,
+                                "Strength": 0.015
+                            },
+                            "GearShiftVibrations": {
+                                "Frequency": 1.0,
+                                "Strength": 0.06
+                            }
+                        },
+                        "Spring": {
+                            "Coefficient": 0.03,
+                            "Saturation": 0.0
+                        },
+                        "Damper": {
+                            "Coefficient": 0.02,
+                            "Saturation": 0.0
+                        }
+                    }
+                }
+                "#;
+
+        let profile = serde_json::from_str::<FfbProfile>(json).expect("parse profile json");
+
+        assert!((profile.ffb_parameters.calibration.output_gain - 1.0).abs() < f32::EPSILON);
+        assert!((profile.ffb_parameters.calibration.steering_range - 1.0).abs() < f32::EPSILON);
+        assert!((profile.ffb_parameters.calibration.const_gain - 1.0).abs() < f32::EPSILON);
+        assert!((profile.ffb_parameters.calibration.sine_gain - 1.0).abs() < f32::EPSILON);
+        assert!((profile.ffb_parameters.calibration.spring_gain - 1.0).abs() < f32::EPSILON);
+        assert!((profile.ffb_parameters.calibration.damper_gain - 1.0).abs() < f32::EPSILON);
+        assert!(!profile.ffb_parameters.experimental.traction_loss.enabled);
     }
 
     #[test]

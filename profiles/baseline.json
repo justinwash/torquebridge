@@ -4,10 +4,12 @@
   "Notes": "Starting point",
   "SteeringDevice": 0,
   "PollMs": 5,
+  "RuntimeConfigPath": "profile.json",
+  "RuntimeControllers": null,
   "FFBParameters": {
     "Const": {
       "Magnitude": 1.0,
-      "MaximumForce": 0.92,
+      "MaximumForce": 1.0,
       "MinimumForce": 0.03,
       "FilterThreshold": 0.18,
       "MinimumCoefficient": 0.55
@@ -34,6 +36,13 @@
     "Damper": {
       "Coefficient": 0.02,
       "Saturation": 0.0
+    },
+    "Calibration": {
+      "Preset": "Auto Quick",
+      "OutputGain": 1.0,
+      "SteeringCenterOffset": 0.0,
+      "SteeringRange": 1.0,
+      "SteeringCurve": 1.0
     }
   }
 }
