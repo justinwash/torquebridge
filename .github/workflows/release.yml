@@ -96,7 +96,7 @@ jobs:
             }
 
             if ($inPackage -and $line -match '^version\s*=') {
-              $lines[$i] = "version = \"$cargoVersion\""
+              $lines[$i] = 'version = "' + $cargoVersion + '"'
               break
             }
           }
