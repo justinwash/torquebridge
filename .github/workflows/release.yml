@@ -1,0 +1,142 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional override (vYYYY.MM.DD or vYYYY.MM.DD.N). Leave blank to auto-increment.'
+        required: false
+        type: string
+  push:
+    branches:
+      - release
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Determine release tag and Cargo version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.release_tag }}"
+
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            $base = "v$(Get-Date -AsUTC -Format 'yyyy.MM.dd')"
+            $matches = git ls-remote --tags origin "refs/tags/$base*" | Out-String
+
+            $suffixes = @(-1)
+            if (-not [string]::IsNullOrWhiteSpace($matches)) {
+              foreach ($line in ($matches -split "`n")) {
+                if ($line -match "refs/tags/$([regex]::Escape($base))(?:\\.(\\d+))?$") {
+                  if ([string]::IsNullOrWhiteSpace($Matches[1])) {
+                    $suffixes += 0
+                  } else {
+                    $suffixes += [int]$Matches[1]
+                  }
+                }
+              }
+            }
+
+            $next = ($suffixes | Measure-Object -Maximum).Maximum + 1
+            if ($next -eq 0) {
+              $tag = $base
+            } else {
+              $tag = "$base.$next"
+            }
+          }
+
+          if ($tag -notmatch '^v(\d{4})\.(\d{2})\.(\d{2})(?:\.(\d+))?$') {
+            throw "release_tag must match vYYYY.MM.DD or vYYYY.MM.DD.N (received '$tag')."
+          }
+
+          $year = [int]$Matches[1]
+          $month = [int]$Matches[2]
+          $day = [int]$Matches[3]
+          $increment = if ([string]::IsNullOrWhiteSpace($Matches[4])) { 0 } else { [int]$Matches[4] }
+
+          if ($increment -eq 0) {
+            $cargoVersion = "$year.$month.$day"
+          } else {
+            $cargoVersion = "$year.$month.$day-release.$increment"
+          }
+
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "cargo_version=$cargoVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Update Cargo package version
+        shell: pwsh
+        run: |
+          $cargoVersion = "${{ steps.version.outputs.cargo_version }}"
+          $lines = Get-Content Cargo.toml
+          $inPackage = $false
+
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i]
+
+            if ($line -match '^\[package\]') {
+              $inPackage = $true
+              continue
+            }
+
+            if ($inPackage -and $line -match '^\[') {
+              break
+            }
+
+            if ($inPackage -and $line -match '^version\s*=') {
+              $lines[$i] = "version = \"$cargoVersion\""
+              break
+            }
+          }
+
+          Set-Content -Path Cargo.toml -Value $lines -Encoding UTF8
+
+      - name: Build release binary
+        shell: pwsh
+        run: cargo build --release
+
+      - name: Create distributable zip
+        id: package
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $releaseDir = "dist/torquebridge-$tag-windows-x64"
+          $zipPath = "dist/torquebridge-$tag-windows-x64.zip"
+
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          Copy-Item "target/release/torquebridge.exe" "$releaseDir/torquebridge.exe" -Force
+
+          if (Test-Path "profiles") {
+            Copy-Item "profiles" "$releaseDir/profiles" -Recurse -Force
+          }
+
+          if (Test-Path "docs") {
+            Copy-Item "docs" "$releaseDir/docs" -Recurse -Force
+          }
+
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath $zipPath -Force
+
+          "zip_path=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          make_latest: true
+          files: |
+            ${{ steps.package.outputs.zip_path }}
