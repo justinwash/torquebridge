@@ -7,7 +7,6 @@ use crate::diagnostics::{
 };
 use crate::inputs::{WinmmDeviceInfo, WinmmJoystick};
 use crate::profile::{FfbProfile, load_profile, save_profile};
-use crate::vjoy::{VJoyApi, VJoyError, VjdStatus};
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use slint::{
@@ -1934,7 +1933,7 @@ pub fn run_profile_editor(config_path: Option<&str>, profile_path: Option<&str>)
         path.borrow().as_path(),
         seed_config_path.as_deref(),
     );
-    if let Some(issue) = vjoy_runtime_issue(DEFAULT_VJOY_DEVICE_ID) {
+    if let Some(issue) = vjoy_runtime_issue_nonblocking(DEFAULT_VJOY_DEVICE_ID) {
         window.set_status_message(SharedString::from(format!("vJoy prerequisite: {issue}")));
     }
     sync_bridge_panel(&window, &bridge_controller.borrow());
@@ -3197,7 +3196,7 @@ fn analyze_launch_readiness(
     profile_path: &Path,
     seed_config_path: Option<&Path>,
 ) -> LaunchReadiness {
-    if let Some(issue) = vjoy_runtime_issue(DEFAULT_VJOY_DEVICE_ID) {
+    if let Some(issue) = vjoy_runtime_issue_nonblocking(DEFAULT_VJOY_DEVICE_ID) {
         return LaunchReadiness {
             is_blocked: true,
             message: issue,
@@ -3282,55 +3281,43 @@ fn analyze_launch_readiness(
     }
 }
 
-fn vjoy_runtime_issue(device_id: u32) -> Option<String> {
-    let api = match VJoyApi::load() {
-        Ok(api) => api,
-        Err(VJoyError::LibraryLoad) => {
-            return Some(
-                "vJoy is not installed. Install vJoy, configure device 1, then restart Torquebridge."
-                    .to_string(),
-            );
-        }
-        Err(error) => {
-            return Some(format!(
-                "vJoy interface is unavailable ({error}). Reinstall or repair vJoy, then restart Torquebridge."
-            ));
-        }
-    };
+fn vjoy_interface_candidates() -> Vec<PathBuf> {
+    let mut candidates = vec![
+        PathBuf::from("vJoyInterface.dll"),
+        PathBuf::from(".\\vJoyInterface.dll"),
+        PathBuf::from("C:\\Windows\\System32\\vJoyInterface.dll"),
+    ];
 
-    if !api.vjoy_enabled() {
+    for program_files in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(root) = std::env::var_os(program_files) {
+            let root = PathBuf::from(root);
+            candidates.push(root.join("vJoy").join("x64").join("vJoyInterface.dll"));
+            candidates.push(root.join("vJoy").join("x86").join("vJoyInterface.dll"));
+            candidates.push(root.join("vJoy").join("vJoyInterface.dll"));
+        }
+    }
+
+    candidates
+}
+
+fn vjoy_runtime_issue_nonblocking(device_id: u32) -> Option<String> {
+    let has_interface = vjoy_interface_candidates()
+        .into_iter()
+        .any(|candidate| candidate.exists());
+
+    if !has_interface {
         return Some(
-            "vJoy is installed but not enabled. Enable the vJoy driver and restart Torquebridge."
+            "vJoy is not installed. Click Install vJoy, then open vJoyConf and configure device 1."
                 .to_string(),
         );
     }
 
-    let (driver_match, dll, driver) = api.driver_match();
-    if !driver_match {
-        return Some(format!(
-            "vJoy driver mismatch detected (dll {dll}, driver {driver}). Reinstall matching vJoy components."
-        ));
-    }
-
-    match api.get_vjd_status(device_id) {
-        VjdStatus::Missing => Some(format!(
-            "vJoy device {device_id} is missing or disabled. Configure it in vJoyConf and retry."
-        )),
-        VjdStatus::Unknown(raw) => Some(format!(
-            "vJoy device {device_id} returned unknown status {raw}. Reconfigure vJoy and retry."
-        )),
-        VjdStatus::Busy => Some(format!(
-            "vJoy device {device_id} is currently busy. Close other feeder apps and retry."
-        )),
-        VjdStatus::Owned => Some(format!(
-            "vJoy device {device_id} is already owned by another process. Stop other feeder apps and retry."
-        )),
-        VjdStatus::Free => None,
-    }
+    let _ = device_id;
+    None
 }
 
 fn install_vjoy_dependency(device_id: u32) -> String {
-    if vjoy_runtime_issue(device_id).is_none() {
+    if vjoy_runtime_issue_nonblocking(device_id).is_none() {
         return "vJoy is already installed and ready.".to_string();
     }
 
@@ -3372,7 +3359,7 @@ fn install_vjoy_dependency(device_id: u32) -> String {
             );
         }
 
-        if let Some(issue) = vjoy_runtime_issue(device_id) {
+        if let Some(issue) = vjoy_runtime_issue_nonblocking(device_id) {
             return format!("Install command completed, but vJoy still needs setup: {issue}");
         }
 
