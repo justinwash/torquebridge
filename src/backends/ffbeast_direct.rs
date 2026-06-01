@@ -215,7 +215,8 @@ fn clamp_force(force: i32) -> i16 {
 mod tests {
     use super::*;
     use crate::config::{
-        ConditionFfbConfig, ConstFfbConfig, FfbParamsConfig, PeriodicFfbConfig, VibrationConfig,
+        CalibrationConfig, ConditionFfbConfig, ConstFfbConfig, ExperimentalConfig, FfbParamsConfig,
+        PeriodicFfbConfig, VibrationConfig,
     };
     use crate::core::domain::{EffectMetadata, EffectUpdate, GameEffect};
     use crate::effect_engine::EffectEngine;
@@ -252,6 +253,8 @@ mod tests {
                 coefficient: 0.02,
                 saturation: 0.25,
             },
+            calibration: CalibrationConfig::default(),
+            experimental: ExperimentalConfig::default(),
         }
     }
 

@@ -1,0 +1,211 @@
+{
+  "Version": 1,
+  "Name": "Baseline Compatibility Bridge",
+  "Notes": "Starting point",
+  "SteeringDevice": 0,
+  "PollMs": 5,
+  "RuntimeConfigPath": null,
+  "RuntimeControllers": [
+    {
+      "ProductGuid": "0e030eb7-0000-0000-0000-504944564944",
+      "InstanceGuid": "1f577b90-4000-11f0-8001-444553540000",
+      "InstanceName": "FFBeast(Wheel)",
+      "ProductName": "FFBeast(Wheel)",
+      "Axes": [
+        {
+          "Id": "Steering",
+          "AxisIndex": 0,
+          "Inverted": 0,
+          "Deadzone": 0.0
+        }
+      ],
+      "Buttons": null,
+      "DPad": null,
+      "FFBParameters": {
+        "Const": {
+          "Magnitude": 1.0,
+          "MaximumForce": 0.92,
+          "MinimumForce": 0.03,
+          "FilterThreshold": 0.18,
+          "MinimumCoefficient": 0.55
+        },
+        "Sine": {
+          "Magnitude": 0.75,
+          "Frequency": 1.0,
+          "MaximumForce": 0.75,
+          "MinimumForce": 0.0,
+          "Phase": 0.375,
+          "EngineVibrations": {
+            "Frequency": 1.0,
+            "Strength": 0.015
+          },
+          "GearShiftVibrations": {
+            "Frequency": 1.0,
+            "Strength": 0.06
+          }
+        },
+        "Spring": {
+          "Coefficient": 0.03,
+          "Saturation": 0.0
+        },
+        "Damper": {
+          "Coefficient": 0.02,
+          "Saturation": 0.0
+        },
+        "Calibration": {
+          "Preset": null,
+          "OutputGain": 1.0,
+          "SteeringCenterOffset": 0.0,
+          "SteeringRange": 1.0,
+          "SteeringCurve": 1.0,
+          "ConstGain": 1.0,
+          "SineGain": 1.0,
+          "SpringGain": 1.0,
+          "DamperGain": 1.0
+        }
+      }
+    },
+    {
+      "ProductGuid": "18881021-0000-0000-0000-504944564944",
+      "InstanceGuid": "d494e130-1f56-11ef-8001-444553540000",
+      "InstanceName": "ODDOR-HANDBRAKE",
+      "ProductName": "ODDOR-HANDBRAKE",
+      "Axes": [
+        {
+          "Id": "Handbrake",
+          "AxisIndex": 6,
+          "Inverted": 0,
+          "Deadzone": 0.0
+        }
+      ],
+      "Buttons": null,
+      "DPad": null,
+      "FFBParameters": null
+    },
+    {
+      "ProductGuid": "b371044f-0000-0000-0000-504944564944",
+      "InstanceGuid": "3343f590-2abe-11f0-8001-444553540000",
+      "InstanceName": "Sim Pedals",
+      "ProductName": "Sim Pedals",
+      "Axes": [
+        {
+          "Id": "Throttle",
+          "AxisIndex": 0,
+          "Inverted": 0,
+          "Deadzone": 0.0
+        },
+        {
+          "Id": "Brake",
+          "AxisIndex": 2,
+          "Inverted": 0,
+          "Deadzone": 0.0
+        },
+        {
+          "Id": "Clutch",
+          "AxisIndex": 1,
+          "Inverted": 0,
+          "Deadzone": 0.0
+        }
+      ],
+      "Buttons": null,
+      "DPad": null,
+      "FFBParameters": null
+    }
+  ],
+  "FFBParameters": {
+    "Const": {
+      "Magnitude": 1.0,
+      "MaximumForce": 1.0,
+      "MinimumForce": 0.03,
+      "FilterThreshold": 0.1,
+      "MinimumCoefficient": 0.6
+    },
+    "Sine": {
+      "Magnitude": 0.83,
+      "Frequency": 0.81,
+      "MaximumForce": 0.75,
+      "MinimumForce": 0.0,
+      "Phase": 0.375,
+      "EngineVibrations": {
+        "Frequency": 1.0,
+        "Strength": 0.04
+      },
+      "GearShiftVibrations": {
+        "Frequency": 1.0,
+        "Strength": 0.06
+      }
+    },
+    "Spring": {
+      "Coefficient": 0.06,
+      "Saturation": 0.06
+    },
+    "Damper": {
+      "Coefficient": 0.0,
+      "Saturation": 0.0
+    },
+    "Calibration": {
+      "Preset": "Auto Quick",
+      "OutputGain": 2.0,
+      "SteeringCenterOffset": 0.0,
+      "SteeringRange": 1.0,
+      "SteeringCurve": 1.0,
+      "ConstGain": 1.0,
+      "SineGain": 1.0,
+      "SpringGain": 1.0,
+      "DamperGain": 1.0
+    },
+    "Experimental": {
+      "TractionLoss": {
+        "Enabled": true,
+        "SteeringRateThreshold": 0.42,
+        "SteeringAngleThreshold": 0.18,
+        "ForceDropThreshold": 0.2,
+        "ReleaseStrength": 0.5,
+        "AttackMs": 90,
+        "RecoveryMs": 480,
+        "MinForceFloor": 0.08,
+        "ApplyConstant": true,
+        "ApplySpring": true,
+        "ApplyDamper": false
+      },
+      "InferredDynamics": {
+        "TorqueSteer": {
+          "Enabled": true,
+          "Strength": 0.09,
+          "TriggerThreshold": 0.55
+        },
+        "BrakeImbalance": {
+          "Enabled": true,
+          "Strength": 0.08,
+          "TriggerThreshold": 0.2
+        },
+        "UndersteerScrub": {
+          "Enabled": true,
+          "Strength": 0.35,
+          "TriggerThreshold": 0.35,
+          "AttackMs": 120,
+          "RecoveryMs": 700
+        },
+        "RearLightness": {
+          "Enabled": true,
+          "Strength": 0.22,
+          "TriggerThreshold": 0.65,
+          "AttackMs": 80,
+          "RecoveryMs": 420
+        },
+        "CurbAsymmetry": {
+          "Enabled": true,
+          "Strength": 0.1,
+          "TriggerThreshold": 0.25
+        },
+        "SnapOversteer": {
+          "Enabled": true,
+          "Strength": 0.16,
+          "TriggerThreshold": 0.55,
+          "AttackMs": 65,
+          "RecoveryMs": 240
+        }
+      }
+    }
+  }
+}
