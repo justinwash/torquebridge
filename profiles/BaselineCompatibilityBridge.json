@@ -62,6 +62,59 @@
           "SineGain": 1.0,
           "SpringGain": 1.0,
           "DamperGain": 1.0
+        },
+        "Experimental": {
+          "TractionLoss": {
+            "Enabled": false,
+            "SteeringRateThreshold": 0.35,
+            "SteeringAngleThreshold": 0.35,
+            "ForceDropThreshold": 0.35,
+            "ReleaseStrength": 1.0,
+            "AttackMs": 120,
+            "RecoveryMs": 450,
+            "MinForceFloor": 0.0,
+            "ApplyConstant": true,
+            "ApplySpring": true,
+            "ApplyDamper": false
+          },
+          "InferredDynamics": {
+            "TorqueSteer": {
+              "Enabled": false,
+              "Strength": 0.0,
+              "TriggerThreshold": 0.35
+            },
+            "BrakeImbalance": {
+              "Enabled": false,
+              "Strength": 0.0,
+              "TriggerThreshold": 0.35
+            },
+            "UndersteerScrub": {
+              "Enabled": false,
+              "Strength": 0.0,
+              "TriggerThreshold": 0.35,
+              "AttackMs": 120,
+              "RecoveryMs": 450
+            },
+            "RearLightness": {
+              "Enabled": false,
+              "Strength": 0.0,
+              "TriggerThreshold": 0.35,
+              "AttackMs": 120,
+              "RecoveryMs": 450
+            },
+            "CurbAsymmetry": {
+              "Enabled": false,
+              "Strength": 0.0,
+              "TriggerThreshold": 0.35
+            },
+            "SnapOversteer": {
+              "Enabled": false,
+              "Strength": 0.0,
+              "TriggerThreshold": 0.35,
+              "AttackMs": 120,
+              "RecoveryMs": 450
+            }
+          }
         }
       }
     },
