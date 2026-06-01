@@ -26,7 +26,7 @@ use torquebridge::ui::run_profile_editor;
 )]
 struct Cli {
     #[command(subcommand)]
-    cmd: Command,
+    cmd: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -124,7 +124,10 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    match cli.cmd {
+    match cli.cmd.unwrap_or(Command::Ui {
+        config: None,
+        profile: None,
+    }) {
         Command::Probe => {
             let _backend = FFBeastBackend::connect()?;
             println!("Connected to FFBeast (045B:59D7)");
