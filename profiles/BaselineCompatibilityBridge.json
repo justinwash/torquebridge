@@ -217,8 +217,8 @@
         "AttackMs": 90,
         "RecoveryMs": 480,
         "MinForceFloor": 0.08,
-        "ApplyConstant": true,
-        "ApplySpring": true,
+        "ApplyConstant": false,
+        "ApplySpring": false,
         "ApplyDamper": false
       },
       "InferredDynamics": {
