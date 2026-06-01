@@ -8,7 +8,7 @@ You can launch quickly with sensible defaults, then tune exactly how the wheel f
 
 - Faster setup for Forza sessions with FFBeast hardware.
 - One place to tune wheel feel instead of scattered tools.
-- Save multiple profiles for different cars, tracks, or driving styles.
+- Save multiple profiles for different cars, setups, or driving styles.
 - Optional advanced controls when you want more detail.
 - Built-in diagnostics when something feels off.
 
