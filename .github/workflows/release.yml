@@ -7,6 +7,9 @@ on:
         description: 'Optional override (vYYYY.MM.DD or vYYYY.MM.DD.N). Leave blank to auto-increment.'
         required: false
         type: string
+  pull_request:
+    branches:
+      - release
   push:
     branches:
       - release
@@ -28,6 +31,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Determine release tag and Cargo version
+        if: github.event_name != 'pull_request'
         id: version
         shell: pwsh
         run: |
@@ -77,6 +81,7 @@ jobs:
           "cargo_version=$cargoVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Update Cargo package version
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $cargoVersion = "${{ steps.version.outputs.cargo_version }}"
@@ -108,6 +113,7 @@ jobs:
         run: cargo build --release
 
       - name: Create distributable zip
+        if: github.event_name != 'pull_request'
         id: package
         shell: pwsh
         run: |
@@ -131,6 +137,7 @@ jobs:
           "zip_path=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Publish GitHub release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
