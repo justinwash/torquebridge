@@ -1,263 +1,311 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Torquebridge | FFBeast for Forza</title>
-  <meta name="description" content="Torquebridge makes Forza feel better on FFBeast wheels with profile-based tuning, quick setup, and easy customization.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="site.css">
-</head>
-<body>
-  <header class="topbar">
-    <div class="brand-lockup">
-      <div class="brand-mark">TB</div>
-      <div>
-        <p class="eyebrow">Torquebridge</p>
-        <h1>Make Forza feel right on FFBeast.</h1>
-      </div>
-    </div>
-    <nav class="top-links" aria-label="Primary">
-      <a href="#why">Why</a>
-      <a href="#features">Features</a>
-      <a href="#screenshots">Screenshots</a>
-      <a href="#download">Download</a>
-      <a href="#technical">Technical</a>
-    </nav>
-  </header>
-
-  <main>
-    <section class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow">Forza + FFBeast wheel tuning</p>
-        <h2>Torquebridge gives you a cleaner, more customizable way to drive.</h2>
-        <p class="lede">
-          It brings your Forza force feedback into a profile-based workflow so you can launch quickly,
-          tune the wheel feel for each car or track, and keep everything easy to revisit later.
-        </p>
-        <div class="hero-actions" id="download">
-          <a class="button primary" href="https://github.com/justinwash/torquebridge/releases/latest" target="_blank" rel="noreferrer">Download latest release</a>
-          <a class="button secondary" href="https://github.com/justinwash/torquebridge" target="_blank" rel="noreferrer">View source on GitHub</a>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Torquebridge | FFBeast for Forza</title>
+    <meta
+      name="description"
+      content="Torquebridge makes Forza feel better on FFBeast wheels with profile-based tuning, quick setup, and easy customization."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="site.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="brand-mark">TB</div>
+        <div>
+          <p class="eyebrow">Torquebridge</p>
+          <h1>Make Forza feel right on FFBeast.</h1>
         </div>
-        <ul class="hero-points">
-          <li>Quick start with sensible defaults</li>
-          <li>Save multiple profiles for different cars, tracks, and setups</li>
-          <li>Optional advanced controls when you want more detail</li>
-          <li>Built-in diagnostics and telemetry when you need to troubleshoot</li>
-        </ul>
       </div>
+      <nav class="top-links" aria-label="Primary">
+        <a href="#why">Why</a>
+        <a href="#features">Features</a>
+        <a href="#screenshots">Screenshots</a>
+        <a href="#download">Download</a>
+        <a href="#technical">Technical</a>
+      </nav>
+    </header>
 
-      <div class="hero-panel">
-        <div class="stat-grid">
-          <article>
-            <span>Setup style</span>
-            <strong>Profile-first</strong>
-          </article>
-          <article>
-            <span>Target hardware</span>
-            <strong>FFBeast wheel</strong>
-          </article>
-          <article>
-            <span>Tuning depth</span>
-            <strong>Simple or advanced</strong>
-          </article>
-          <article>
-            <span>Best use case</span>
-            <strong>Forza driving</strong>
-          </article>
-        </div>
-        <p class="panel-note">
-          Start with a base profile, pick your steering input, then use the tuning tabs to shape the wheel feel without fighting a maze of setup files.
-        </p>
-      </div>
-    </section>
-
-    <section id="why" class="content-block">
-      <h3>Why Torquebridge</h3>
-      <div class="card-grid four-up">
-        <article class="card">
-          <h4>Faster to get driving</h4>
-          <p>Open Profile Studio, choose your input, save once, and launch. The goal is to spend less time setting up and more time driving.</p>
-        </article>
-        <article class="card">
-          <h4>More control where it matters</h4>
-          <p>Adjust force behavior in layers, from basic calibration all the way to experimental effects when you want extra detail.</p>
-        </article>
-        <article class="card">
-          <h4>Profiles you can come back to</h4>
-          <p>Keep different setups for different driving styles, and return to them later without rebuilding the whole setup.</p>
-        </article>
-        <article class="card">
-          <h4>Built for troubleshooting</h4>
-          <p>Diagnostics, telemetry, and launch preflight make it easier to see what the bridge is doing and why.</p>
-        </article>
-      </div>
-    </section>
-
-    <section id="features" class="content-block">
-      <h3>What You Can Customize</h3>
-      <div class="card-grid three-up">
-        <article class="card featured">
-          <h4>Core force feel</h4>
-          <ul>
-            <li>Constant force</li>
-            <li>Periodic and vibration behavior</li>
-            <li>Condition effects for spring and damper</li>
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Forza + FFBeast wheel tuning</p>
+          <h2>Torquebridge gives you a cleaner, more customizable way to drive.</h2>
+          <p class="lede">
+            It brings your Forza force feedback into a profile-based workflow so you can launch quickly, tune the wheel feel for each car or
+            track, and keep everything easy to revisit later.
+          </p>
+          <div class="hero-actions" id="download">
+            <a class="button primary" href="https://github.com/justinwash/torquebridge/releases/latest" target="_blank" rel="noreferrer"
+              >Download latest release</a
+            >
+            <a class="button secondary" href="https://github.com/justinwash/torquebridge" target="_blank" rel="noreferrer"
+              >View source on GitHub</a
+            >
+          </div>
+          <ul class="hero-points">
+            <li>Quick start with sensible defaults</li>
+            <li>Save multiple profiles for different cars, tracks, and setups</li>
+            <li>Optional advanced controls when you want more detail</li>
+            <li>Built-in diagnostics and telemetry when you need to troubleshoot</li>
           </ul>
-        </article>
-        <article class="card featured">
-          <h4>Calibration controls</h4>
-          <ul>
-            <li>Output gain</li>
-            <li>Per-effect gain</li>
-            <li>Steering center, range, and curve</li>
-          </ul>
-        </article>
-        <article class="card featured">
-          <h4>Experimental effects</h4>
-          <ul>
-            <li>Traction loss release behavior</li>
-            <li>Inferred dynamics toggles and thresholds</li>
-            <li>Optional per-effect shaping and recovery tuning</li>
-          </ul>
-        </article>
-      </div>
-    </section>
-
-    <section class="content-block">
-      <h3>How It Feels In Practice</h3>
-      <div class="card-grid three-up">
-        <article class="card">
-          <h4>Start from a clean baseline</h4>
-          <p>The default profile gives you a safe starting point so you can dial in the feel instead of starting from zero every time.</p>
-        </article>
-        <article class="card">
-          <h4>Tune while you test</h4>
-          <p>Small changes are easy to save and compare, which makes it simpler to move from “close” to “right”.</p>
-        </article>
-        <article class="card">
-          <h4>Use advanced tools only when needed</h4>
-          <p>Diagnostics, telemetry, and experimental effects are there when you want them, but they do not get in your way when you just want to drive.</p>
-        </article>
-      </div>
-    </section>
-
-    <section id="screenshots" class="content-block">
-      <h3>Screenshots</h3>
-      <div class="screenshot-block">
-        <div class="screenshot-text">
-          <h4>Main screen</h4>
-          <p>The landing view for profiles and runtime controls. This is where you pick the steering device, save your profile, and launch the bridge.</p>
         </div>
-        <img src="screenshots/main-screen.png" alt="Torquebridge main screen">
-      </div>
 
-      <div class="screenshot-block reverse">
-        <div class="screenshot-text">
-          <h4>Periodic and vibration panel</h4>
-          <p>Use this area to shape the texture and energy of the wheel. It is especially useful when you want stronger road feel without turning the wheel into a constant buzz.</p>
+        <div class="hero-panel">
+          <div class="stat-grid">
+            <article>
+              <span>Setup style</span>
+              <strong>Profile-first</strong>
+            </article>
+            <article>
+              <span>Target hardware</span>
+              <strong>FFBeast wheel</strong>
+            </article>
+            <article>
+              <span>Tuning depth</span>
+              <strong>Simple or advanced</strong>
+            </article>
+            <article>
+              <span>Best use case</span>
+              <strong>Forza driving</strong>
+            </article>
+          </div>
+          <p class="panel-note">
+            Start with a base profile, pick your steering input, then use the tuning tabs to shape the wheel feel without fighting a maze of
+            setup files.
+          </p>
         </div>
-        <img src="screenshots/periodic-and-vibration.png" alt="Torquebridge periodic and vibration panel">
-      </div>
+      </section>
 
-      <div class="screenshot-block">
-        <div class="screenshot-text">
-          <h4>Diagnostics</h4>
-          <p>The diagnostics view is for exports, session review, and troubleshooting. It helps you see what happened in a bridge session and share it cleanly when something needs checking.</p>
+      <section id="why" class="content-block">
+        <h3>Why Torquebridge</h3>
+        <div class="card-grid four-up">
+          <article class="card">
+            <h4>Faster to get driving</h4>
+            <p>
+              Open Profile Studio, choose your input, save once, and launch. The goal is to spend less time setting up and more time
+              driving.
+            </p>
+          </article>
+          <article class="card">
+            <h4>More control where it matters</h4>
+            <p>Adjust force behavior in layers, from basic calibration all the way to experimental effects when you want extra detail.</p>
+          </article>
+          <article class="card">
+            <h4>Profiles you can come back to</h4>
+            <p>Keep different setups for different driving styles, and return to them later without rebuilding the whole setup.</p>
+          </article>
+          <article class="card">
+            <h4>Built for troubleshooting</h4>
+            <p>Diagnostics, telemetry, and launch preflight make it easier to see what the bridge is doing and why.</p>
+          </article>
         </div>
-        <img src="screenshots/diagnostics.png" alt="Torquebridge diagnostics panel">
-      </div>
+      </section>
 
-      <div class="screenshot-block reverse">
-        <div class="screenshot-text">
-          <h4>Experimental effects, page 1</h4>
-          <p>The first experimental page shows traction-loss release shaping and the first group of inferred dynamics controls. This is where you start pushing the profile beyond the basic wheel feel.</p>
+      <section id="features" class="content-block">
+        <h3>What You Can Customize</h3>
+        <div class="card-grid three-up">
+          <article class="card featured">
+            <h4>Core force feel</h4>
+            <ul>
+              <li>Constant force</li>
+              <li>Periodic and vibration behavior</li>
+              <li>Condition effects for spring and damper</li>
+            </ul>
+          </article>
+          <article class="card featured">
+            <h4>Calibration controls</h4>
+            <ul>
+              <li>Output gain</li>
+              <li>Per-effect gain</li>
+              <li>Steering center, range, and curve</li>
+            </ul>
+          </article>
+          <article class="card featured">
+            <h4>Experimental effects</h4>
+            <ul>
+              <li>Traction loss release behavior</li>
+              <li>Inferred dynamics toggles and thresholds</li>
+              <li>Optional per-effect shaping and recovery tuning</li>
+            </ul>
+          </article>
         </div>
-        <img src="screenshots/experimental-1.png" alt="Torquebridge experimental panel one">
-      </div>
+      </section>
 
-      <div class="screenshot-block">
-        <div class="screenshot-text">
-          <h4>Experimental effects, page 2</h4>
-          <p>The second experimental page continues the inferred dynamics controls with more tuning for car-specific behavior and response changes.</p>
+      <section class="content-block">
+        <h3>How It Feels In Practice</h3>
+        <div class="card-grid three-up">
+          <article class="card">
+            <h4>Start from a clean baseline</h4>
+            <p>The default profile gives you a safe starting point so you can dial in the feel instead of starting from zero every time.</p>
+          </article>
+          <article class="card">
+            <h4>Tune while you test</h4>
+            <p>Small changes are easy to save and compare, which makes it simpler to move from “close” to “right”.</p>
+          </article>
+          <article class="card">
+            <h4>Use advanced tools only when needed</h4>
+            <p>
+              Diagnostics, telemetry, and experimental effects are there when you want them, but they do not get in your way when you just
+              want to drive.
+            </p>
+          </article>
         </div>
-        <img src="screenshots/experimental-2.png" alt="Torquebridge experimental panel two">
-      </div>
+      </section>
 
-      <div class="screenshot-block reverse">
-        <div class="screenshot-text">
-          <h4>Experimental effects, page 3</h4>
-          <p>The third experimental page rounds out the deeper tuning set so you can keep all of the related controls together in one place.</p>
+      <section id="screenshots" class="content-block">
+        <h3>Screenshots</h3>
+        <div class="screenshot-block">
+          <div class="screenshot-text">
+            <h4>Main screen</h4>
+            <p>
+              The landing view for profiles and runtime controls. This is where you pick the steering device, save your profile, and launch
+              the bridge.
+            </p>
+          </div>
+          <img src="screenshots/main-screen.png" alt="Torquebridge main screen" />
         </div>
-        <img src="screenshots/experimental-3.png" alt="Torquebridge experimental panel three">
-      </div>
 
-      <div class="screenshot-block">
-        <div class="screenshot-text">
-          <h4>Telemetry</h4>
-          <p>Telemetry gives you live runtime snapshots, packet rates, force trends, and translation state so you can see what the bridge is doing while you drive.</p>
+        <div class="screenshot-block reverse">
+          <div class="screenshot-text">
+            <h4>Periodic and vibration panel</h4>
+            <p>
+              Use this area to shape the texture and energy of the wheel. It is especially useful when you want stronger road feel without
+              turning the wheel into a constant buzz.
+            </p>
+          </div>
+          <img src="screenshots/periodic-and-vibration.png" alt="Torquebridge periodic and vibration panel" />
         </div>
-        <img src="screenshots/telemetry.png" alt="Torquebridge telemetry panel">
-      </div>
-    </section>
 
-    <section class="content-block">
-      <h3>Getting Started</h3>
-      <div class="card-grid three-up">
-        <article class="card">
-          <h4>1. Open the app</h4>
-          <p>Run the Profile Studio UI and select the steering input you want to use.</p>
-        </article>
-        <article class="card">
-          <h4>2. Save the profile</h4>
-          <p>Once your steering device is selected, save the profile so the runtime state stays attached to it.</p>
-        </article>
-        <article class="card">
-          <h4>3. Launch and tune</h4>
-          <p>Start the bridge, drive, and make small changes until the wheel feels right for the car or event you are in.</p>
-        </article>
-      </div>
-    </section>
+        <div class="screenshot-block">
+          <div class="screenshot-text">
+            <h4>Diagnostics</h4>
+            <p>
+              The diagnostics view is for exports, session review, and troubleshooting. It helps you see what happened in a bridge session
+              and share it cleanly when something needs checking.
+            </p>
+          </div>
+          <img src="screenshots/diagnostics.png" alt="Torquebridge diagnostics panel" />
+        </div>
 
-    <section class="content-block callout">
-      <div>
-        <h3>Need to reset?</h3>
-        <p>Reset Defaults brings the current profile back to the baseline tune so you can start over cleanly without rebuilding your layout or routing choices.</p>
-      </div>
-      <a class="button primary" href="https://github.com/justinwash/torquebridge/releases/latest" target="_blank" rel="noreferrer">Get the latest build</a>
-    </section>
+        <div class="screenshot-block reverse">
+          <div class="screenshot-text">
+            <h4>Experimental effects, page 1</h4>
+            <p>
+              The first experimental page shows traction-loss release shaping and the first group of inferred dynamics controls. This is
+              where you start pushing the profile beyond the basic wheel feel.
+            </p>
+          </div>
+          <img src="screenshots/experimental-1.png" alt="Torquebridge experimental panel one" />
+        </div>
 
-    <section id="technical" class="content-block technical">
-      <h3>Developer / Contributing / Technical</h3>
-      <div class="card-grid two-up">
-        <article class="card">
-          <h4>Build and test</h4>
-          <p>cargo run -- ui</p>
-          <p>cargo test</p>
-        </article>
-        <article class="card">
-          <h4>Repository layout</h4>
-          <p>src for runtime and translation logic, ui for the editor, profiles for tuning data, and docs for roadmap/architecture notes.</p>
-        </article>
-      </div>
-      <div class="card-grid two-up">
-        <article class="card">
-          <h4>Release process</h4>
-          <p>Merge into the release branch to trigger the packaging workflow. Tags use date-based versions like vYYYY.MM.DD and vYYYY.MM.DD.N.</p>
-        </article>
-        <article class="card">
-          <h4>Screenshot assets</h4>
-          <p>The README and this page both use files in docs/screenshots so the gallery stays simple to maintain.</p>
-        </article>
-      </div>
-    </section>
-  </main>
+        <div class="screenshot-block">
+          <div class="screenshot-text">
+            <h4>Experimental effects, page 2</h4>
+            <p>
+              The second experimental page continues the inferred dynamics controls with more tuning for car-specific behavior and response
+              changes.
+            </p>
+          </div>
+          <img src="screenshots/experimental-2.png" alt="Torquebridge experimental panel two" />
+        </div>
 
-  <footer class="footer">
-    <p>Torquebridge is focused on making Forza feel better on FFBeast wheels with less setup friction and more tuning control.</p>
-    <p><a href="https://github.com/justinwash/torquebridge" target="_blank" rel="noreferrer">GitHub repository</a> · <a href="https://github.com/justinwash/torquebridge/releases/latest" target="_blank" rel="noreferrer">Latest release</a></p>
-  </footer>
-</body>
+        <div class="screenshot-block reverse">
+          <div class="screenshot-text">
+            <h4>Experimental effects, page 3</h4>
+            <p>
+              The third experimental page rounds out the deeper tuning set so you can keep all of the related controls together in one
+              place.
+            </p>
+          </div>
+          <img src="screenshots/experimental-3.png" alt="Torquebridge experimental panel three" />
+        </div>
+
+        <div class="screenshot-block">
+          <div class="screenshot-text">
+            <h4>Telemetry</h4>
+            <p>
+              Telemetry gives you live runtime snapshots, packet rates, force trends, and translation state so you can see what the bridge
+              is doing while you drive.
+            </p>
+          </div>
+          <img src="screenshots/telemetry.png" alt="Torquebridge telemetry panel" />
+        </div>
+      </section>
+
+      <section class="content-block">
+        <h3>Getting Started</h3>
+        <div class="card-grid three-up">
+          <article class="card">
+            <h4>1. Open the app</h4>
+            <p>Run the Profile Studio UI and select the steering input you want to use.</p>
+          </article>
+          <article class="card">
+            <h4>2. Save the profile</h4>
+            <p>Once your steering device is selected, save the profile so the runtime state stays attached to it.</p>
+          </article>
+          <article class="card">
+            <h4>3. Launch and tune</h4>
+            <p>Start the bridge, drive, and make small changes until the wheel feels right for the car or event you are in.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="content-block callout">
+        <div>
+          <h3>Need to reset?</h3>
+          <p>
+            Reset Defaults brings the current profile back to the baseline tune so you can start over cleanly without rebuilding your layout
+            or routing choices.
+          </p>
+        </div>
+        <a class="button primary" href="https://github.com/justinwash/torquebridge/releases/latest" target="_blank" rel="noreferrer"
+          >Get the latest build</a
+        >
+      </section>
+
+      <section id="technical" class="content-block technical">
+        <h3>Developer / Contributing / Technical</h3>
+        <div class="card-grid two-up">
+          <article class="card">
+            <h4>Build and test</h4>
+            <p>cargo run -- ui</p>
+            <p>cargo test</p>
+          </article>
+          <article class="card">
+            <h4>Repository layout</h4>
+            <p>
+              src for runtime and translation logic, ui for the editor, profiles for tuning data, and docs for roadmap/architecture notes.
+            </p>
+          </article>
+        </div>
+        <div class="card-grid two-up">
+          <article class="card">
+            <h4>Release process</h4>
+            <p>
+              Merge into the release branch to trigger the packaging workflow. Tags use date-based versions like vYYYY.MM.DD and
+              vYYYY.MM.DD.N.
+            </p>
+          </article>
+          <article class="card">
+            <h4>Screenshot assets</h4>
+            <p>The README and this page both use files in docs/screenshots so the gallery stays simple to maintain.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Torquebridge is focused on making Forza feel better on FFBeast wheels with less setup friction and more tuning control.</p>
+      <p>
+        <a href="https://github.com/justinwash/torquebridge" target="_blank" rel="noreferrer">GitHub repository</a> ·
+        <a href="https://github.com/justinwash/torquebridge/releases/latest" target="_blank" rel="noreferrer">Latest release</a>
+      </p>
+    </footer>
+  </body>
 </html>

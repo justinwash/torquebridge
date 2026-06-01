@@ -23,11 +23,10 @@ html {
 
 body {
   margin: 0;
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
   background:
     radial-gradient(circle at top left, rgba(211, 154, 45, 0.15), transparent 30%),
-    radial-gradient(circle at top right, rgba(67, 110, 170, 0.08), transparent 25%),
-    var(--bg);
+    radial-gradient(circle at top right, rgba(67, 110, 170, 0.08), transparent 25%), var(--bg);
   color: var(--text);
   line-height: 1.6;
 }
@@ -113,7 +112,10 @@ main,
   padding: 0.72rem 1rem;
   border-radius: 999px;
   font-weight: 700;
-  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
 }
 
 .top-links a:hover,
