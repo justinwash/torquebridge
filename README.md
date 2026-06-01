@@ -2,6 +2,8 @@
 
 Torquebridge makes it easier to play Forza with an FFBeast wheel by giving you a clean, profile-based force feedback workflow.
 
+Double-click the app to open Profile Studio, then tune and launch from there.
+
 You can launch quickly with sensible defaults, then tune exactly how the wheel feels for your setup without fighting complex configuration files every session.
 
 ## Why Torquebridge
@@ -27,7 +29,7 @@ You can launch quickly with sensible defaults, then tune exactly how the wheel f
 
 ## Quick Start For Players
 
-1. Open Profile Studio.
+1. Open Profile Studio. If you launched the EXE normally, this should already be open.
 2. Pick your steering device in the Runtime tab.
 3. Save your profile.
 4. Launch bridge.
