@@ -18,6 +18,10 @@ use torquebridge::frontends::forza_vjoy::{
 use torquebridge::inputs::WinmmJoystick;
 use torquebridge::profile::{FfbProfile, ProfileWatcher, load_profile};
 use torquebridge::ui::run_profile_editor;
+#[cfg(windows)]
+use winapi::um::wincon::{GetConsoleProcessList, GetConsoleWindow};
+#[cfg(windows)]
+use winapi::um::winuser::{SW_HIDE, ShowWindow};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -123,11 +127,14 @@ enum Command {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-
-    match cli.cmd.unwrap_or(Command::Ui {
+    let command = cli.cmd.unwrap_or(Command::Ui {
         config: None,
         profile: None,
-    }) {
+    });
+
+    maybe_hide_console_for_ui_launch(&command);
+
+    match command {
         Command::Probe => {
             let _backend = FFBeastBackend::connect()?;
             println!("Connected to FFBeast (045B:59D7)");
@@ -681,6 +688,29 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(windows)]
+fn maybe_hide_console_for_ui_launch(command: &Command) {
+    if !matches!(command, Command::Ui { .. }) {
+        return;
+    }
+
+    unsafe {
+        // Only hide if this process owns the console (typical when launched from Explorer).
+        let mut process_list = [0u32; 2];
+        let attached_count =
+            GetConsoleProcessList(process_list.as_mut_ptr(), process_list.len() as u32);
+        if attached_count <= 1 {
+            let console_window = GetConsoleWindow();
+            if !console_window.is_null() {
+                ShowWindow(console_window, SW_HIDE);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn maybe_hide_console_for_ui_launch(_command: &Command) {}
 
 fn load_effective_profile(
     config: &str,
