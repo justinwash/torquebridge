@@ -370,6 +370,7 @@ export component ProfileEditorWindow inherits Window {
     in-out property <bool> bridge_running;
     in-out property <bool> hot_reload_enabled: true;
     in-out property <bool> close_to_taskbar_enabled: false;
+    in-out property <bool> show_reset_defaults_confirm: false;
     in-out property <int> current_section: 0;
     in-out property <int> selected_steering_device_index: 0;
     in-out property <float> poll_ms;
@@ -406,6 +407,7 @@ export component ProfileEditorWindow inherits Window {
     in-out property <float> calibration_steering_curve;
 
     callback save_requested();
+    callback reset_defaults_requested();
     callback select_profile_requested(int);
     callback start_bridge_requested();
     callback stop_bridge_requested();
@@ -635,6 +637,15 @@ export component ProfileEditorWindow inherits Window {
                                 enabled: !bridge_running;
                                 pressed => {
                                     root.start_bridge_requested();
+                                }
+                            }
+
+                            ActionButton {
+                                width: 156px;
+                                primary: false;
+                                label: "Reset Defaults";
+                                pressed => {
+                                    root.show_reset_defaults_confirm = true;
                                 }
                             }
 
@@ -2055,6 +2066,7 @@ export component ProfileEditorWindow inherits Window {
 
                                     HorizontalLayout {
                                         spacing: 18px;
+                                        alignment: start;
 
                                         ToggleCard {
                                             title: "Traction Loss Release";
@@ -2065,42 +2077,33 @@ export component ProfileEditorWindow inherits Window {
                                             }
                                         }
 
-                                        Rectangle {
-                                            border-radius: 24px;
-                                            background: #121925;
-                                            border-color: #1d2533;
-                                            border-width: 1px;
-                                            min-height: 168px;
+                                        VerticalLayout {
+                                            spacing: 18px;
 
-                                            VerticalLayout {
-                                                padding: 18px;
-                                                spacing: 12px;
-
-                                                ToggleCard {
-                                                    title: "Affects Constant";
-                                                    subtitle: "Primary aligning torque release path.";
-                                                    active: experimental_slip_apply_constant;
-                                                    pressed => {
-                                                        root.experimental_slip_apply_constant = !root.experimental_slip_apply_constant;
-                                                    }
+                                            ToggleCard {
+                                                title: "Affects Constant";
+                                                subtitle: "Primary aligning torque release path.";
+                                                active: experimental_slip_apply_constant;
+                                                pressed => {
+                                                    root.experimental_slip_apply_constant = !root.experimental_slip_apply_constant;
                                                 }
+                                            }
 
-                                                ToggleCard {
-                                                    title: "Affects Spring";
-                                                    subtitle: "Centering drop when breakaway is inferred.";
-                                                    active: experimental_slip_apply_spring;
-                                                    pressed => {
-                                                        root.experimental_slip_apply_spring = !root.experimental_slip_apply_spring;
-                                                    }
+                                            ToggleCard {
+                                                title: "Affects Spring";
+                                                subtitle: "Centering drop when breakaway is inferred.";
+                                                active: experimental_slip_apply_spring;
+                                                pressed => {
+                                                    root.experimental_slip_apply_spring = !root.experimental_slip_apply_spring;
                                                 }
+                                            }
 
-                                                ToggleCard {
-                                                    title: "Affects Damper";
-                                                    subtitle: "Optional damping release during slip events.";
-                                                    active: experimental_slip_apply_damper;
-                                                    pressed => {
-                                                        root.experimental_slip_apply_damper = !root.experimental_slip_apply_damper;
-                                                    }
+                                            ToggleCard {
+                                                title: "Affects Damper";
+                                                subtitle: "Optional damping release during slip events.";
+                                                active: experimental_slip_apply_damper;
+                                                pressed => {
+                                                    root.experimental_slip_apply_damper = !root.experimental_slip_apply_damper;
                                                 }
                                             }
                                         }
@@ -2797,6 +2800,73 @@ export component ProfileEditorWindow inherits Window {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.show_reset_defaults_confirm : Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            background: #000000bb;
+
+            TouchArea {
+                clicked => {
+                }
+            }
+
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: 460px;
+                border-radius: 24px;
+                background: #121925;
+                border-color: #d39a2d;
+                border-width: 1px;
+
+                VerticalLayout {
+                    padding: 22px;
+                    spacing: 14px;
+
+                    Text {
+                        text: "Reset To Defaults?";
+                        color: #ffffff;
+                        font-size: 22px;
+                        font-weight: 800;
+                    }
+
+                    Text {
+                        text: "This resets tuning and experimental settings to baseline defaults for this profile. Profile identity and routing stay unchanged.";
+                        color: #d9e2f2;
+                        font-size: 13px;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 12px;
+
+                        Rectangle { }
+
+                        ActionButton {
+                            width: 120px;
+                            primary: false;
+                            label: "Cancel";
+                            pressed => {
+                                root.show_reset_defaults_confirm = false;
+                            }
+                        }
+
+                        ActionButton {
+                            width: 170px;
+                            primary: true;
+                            label: "Confirm Reset";
+                            pressed => {
+                                root.show_reset_defaults_confirm = false;
+                                root.reset_defaults_requested();
                             }
                         }
                     }

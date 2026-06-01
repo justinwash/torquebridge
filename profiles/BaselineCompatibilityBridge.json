@@ -209,7 +209,7 @@
     },
     "Experimental": {
       "TractionLoss": {
-        "Enabled": true,
+        "Enabled": false,
         "SteeringRateThreshold": 0.42,
         "SteeringAngleThreshold": 0.18,
         "ForceDropThreshold": 0.2,
@@ -217,42 +217,42 @@
         "AttackMs": 90,
         "RecoveryMs": 480,
         "MinForceFloor": 0.08,
-        "ApplyConstant": true,
-        "ApplySpring": true,
+        "ApplyConstant": false,
+        "ApplySpring": false,
         "ApplyDamper": false
       },
       "InferredDynamics": {
         "TorqueSteer": {
-          "Enabled": true,
+          "Enabled": false,
           "Strength": 0.09,
           "TriggerThreshold": 0.55
         },
         "BrakeImbalance": {
-          "Enabled": true,
+          "Enabled": false,
           "Strength": 0.08,
           "TriggerThreshold": 0.2
         },
         "UndersteerScrub": {
-          "Enabled": true,
+          "Enabled": false,
           "Strength": 0.35,
           "TriggerThreshold": 0.35,
           "AttackMs": 120,
           "RecoveryMs": 700
         },
         "RearLightness": {
-          "Enabled": true,
+          "Enabled": false,
           "Strength": 0.22,
           "TriggerThreshold": 0.65,
           "AttackMs": 80,
           "RecoveryMs": 420
         },
         "CurbAsymmetry": {
-          "Enabled": true,
+          "Enabled": false,
           "Strength": 0.1,
           "TriggerThreshold": 0.25
         },
         "SnapOversteer": {
-          "Enabled": true,
+          "Enabled": false,
           "Strength": 0.16,
           "TriggerThreshold": 0.55,
           "AttackMs": 65,
