@@ -2400,6 +2400,44 @@ pub fn run_profile_editor(config_path: Option<&str>, profile_path: Option<&str>)
     let weak_window = window.as_weak();
     let profile_state_handle = Rc::clone(&profile_state);
     let path_handle = Rc::clone(&path);
+    let device_catalog_handle = Rc::clone(&device_catalog);
+    let seed_config_path_handle = seed_config_path.clone();
+    window.on_reset_defaults_requested(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+
+        let default_profile =
+            match load_default_profile_template(seed_config_path_handle.as_deref()) {
+                Ok(profile) => profile,
+                Err(error) => {
+                    window.set_status_message(SharedString::from(format!(
+                        "Reset defaults failed: {error}"
+                    )));
+                    return;
+                }
+            };
+
+        let mut next = profile_state_handle.borrow().clone();
+        next.poll_ms = default_profile.poll_ms;
+        next.ffb_parameters = default_profile.ffb_parameters;
+        *profile_state_handle.borrow_mut() = next.clone();
+
+        ProfileEditorState::from(&next).apply_to_window(&window, path_handle.borrow().as_path());
+        refresh_runtime_summaries(&window, device_catalog_handle.as_ref());
+        refresh_runtime_routing_preflight(
+            &window,
+            path_handle.borrow().as_path(),
+            seed_config_path_handle.as_deref(),
+        );
+        window.set_status_message(SharedString::from(
+            "Reset to defaults loaded baseline tuning. Save Profile to persist.",
+        ));
+    });
+
+    let weak_window = window.as_weak();
+    let profile_state_handle = Rc::clone(&profile_state);
+    let path_handle = Rc::clone(&path);
     let bridge_controller_handle = Rc::clone(&bridge_controller);
     let device_catalog_handle = Rc::clone(&device_catalog);
     let observability_handle = Rc::clone(&observability);
@@ -3068,6 +3106,30 @@ fn load_ffb_settings(controllers: &[ControllerConfig]) -> Result<FfbParamsConfig
         .ok_or_else(|| anyhow!("no FFBParameters entry found in config"))
 }
 
+fn load_default_profile_template(seed_config_path: Option<&Path>) -> Result<FfbProfile> {
+    let cwd = std::env::current_dir().context("failed to resolve current working directory")?;
+    let baseline_path = cwd.join("profiles").join("baseline.json");
+    if baseline_path.exists() {
+        return load_profile(&baseline_path).with_context(|| {
+            format!(
+                "failed to load baseline profile {}",
+                baseline_path.display()
+            )
+        });
+    }
+
+    if let Some(config_path) = seed_config_path {
+        let controllers = load_controllers(config_path)?;
+        let mut profile = FfbProfile::from_ffb_settings(load_ffb_settings(&controllers)?);
+        profile.runtime_controllers = Some(controllers);
+        return Ok(profile);
+    }
+
+    Err(anyhow!(
+        "baseline defaults are unavailable (missing profiles/baseline.json and no --config seed)"
+    ))
+}
+
 fn save_window_profile(
     window: &ProfileEditorWindow,
     profile_state: &RefCell<FfbProfile>,
@@ -3377,6 +3439,31 @@ fn install_vjoy_dependency(device_id: u32) -> String {
 fn open_vjoy_configuration() -> String {
     #[cfg(windows)]
     {
+        fn launch_elevated(file_path: &str) -> Result<(), String> {
+            let escaped = file_path.replace('\'', "''");
+            let command = format!("Start-Process -FilePath '{escaped}' -Verb RunAs");
+
+            let status = Command::new("powershell")
+                .args([
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    &command,
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status()
+                .map_err(|error| format!("failed to invoke elevation prompt: {error}"))?;
+
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "elevation request was declined or failed ({status})"
+                ))
+            }
+        }
+
         let mut candidates = vec![
             PathBuf::from("C:\\Program Files\\vJoy\\x64\\vJoyConf.exe"),
             PathBuf::from("C:\\Program Files (x86)\\vJoy\\x86\\vJoyConf.exe"),
@@ -3395,28 +3482,30 @@ fn open_vjoy_configuration() -> String {
 
         for candidate in candidates {
             if candidate.exists() {
-                match Command::new(&candidate).spawn() {
+                let candidate_path = candidate.to_string_lossy().to_string();
+                match launch_elevated(candidate_path.as_str()) {
                     Ok(_) => {
-                        return "Opened vJoyConf. Configure or enable device 1, then return and launch the bridge."
-                            .to_string()
+                        return "Requested elevated vJoyConf launch. Accept UAC, configure or enable device 1, then return and launch the bridge."
+                            .to_string();
                     }
                     Err(error) => {
                         return format!(
-                            "Found vJoyConf but could not open it ({error}). Run it manually and configure device 1."
-                        )
+                            "Found vJoyConf but could not request elevation ({error}). Run vJoyConf as administrator and configure device 1."
+                        );
                     }
                 }
             }
         }
 
-        match Command::new("vJoyConf.exe").spawn() {
+        match launch_elevated("vJoyConf.exe") {
             Ok(_) => {
-                "Opened vJoyConf. Configure or enable device 1, then return and launch the bridge."
+                "Requested elevated vJoyConf launch. Accept UAC, configure or enable device 1, then return and launch the bridge."
                     .to_string()
             }
-            Err(_) => {
-                "Could not locate vJoyConf. Install or repair vJoy, then open vJoyConf manually."
-                    .to_string()
+            Err(error) => {
+                format!(
+                    "Could not locate vJoyConf or request elevation ({error}). Install or repair vJoy, then run vJoyConf as administrator manually."
+                )
             }
         }
     }
