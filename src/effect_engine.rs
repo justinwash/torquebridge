@@ -324,7 +324,7 @@ impl EffectEngine {
         if config.enabled {
             let triggered = steering_rate >= config.steering_rate_threshold.clamp(0.0, 8.0)
                 && steering_angle >= config.steering_angle_threshold.clamp(0.0, 1.0)
-                && force_change >= config.force_drop_threshold.clamp(0.0, 1.0);
+                && force_change >= config.force_change_threshold.clamp(0.0, 1.0);
             self.traction_release = evolve_scalar(
                 self.traction_release,
                 triggered,
@@ -782,7 +782,7 @@ mod tests {
         tuned.experimental.traction_loss.enabled = true;
         tuned.experimental.traction_loss.steering_rate_threshold = 0.0;
         tuned.experimental.traction_loss.steering_angle_threshold = 0.0;
-        tuned.experimental.traction_loss.force_drop_threshold = 0.0;
+        tuned.experimental.traction_loss.force_change_threshold = 0.0;
         tuned.experimental.traction_loss.release_strength = 1.0;
         tuned.experimental.traction_loss.attack_ms = 1;
         tuned.experimental.traction_loss.recovery_ms = 1_000;
@@ -828,7 +828,7 @@ mod tests {
         tuned.experimental.traction_loss.enabled = true;
         tuned.experimental.traction_loss.steering_rate_threshold = 0.0;
         tuned.experimental.traction_loss.steering_angle_threshold = 0.0;
-        tuned.experimental.traction_loss.force_drop_threshold = 0.3;
+        tuned.experimental.traction_loss.force_change_threshold = 0.3;
         tuned.experimental.traction_loss.release_strength = 1.0;
         tuned.experimental.traction_loss.attack_ms = 1;
         tuned.experimental.traction_loss.recovery_ms = 1_000;
