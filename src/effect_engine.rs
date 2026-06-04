@@ -319,11 +319,12 @@ impl EffectEngine {
 
         let new_force_proxy = force_proxy(effect).unwrap_or(self.last_force_proxy);
         let force_drop = (self.last_force_proxy - new_force_proxy).max(0.0);
+        let force_change = (new_force_proxy - self.last_force_proxy).abs();
 
         if config.enabled {
             let triggered = steering_rate >= config.steering_rate_threshold.clamp(0.0, 8.0)
                 && steering_angle >= config.steering_angle_threshold.clamp(0.0, 1.0)
-                && force_drop >= config.force_drop_threshold.clamp(0.0, 1.0);
+                && force_change >= config.force_change_threshold.clamp(0.0, 1.0);
             self.traction_release = evolve_scalar(
                 self.traction_release,
                 triggered,
@@ -781,7 +782,7 @@ mod tests {
         tuned.experimental.traction_loss.enabled = true;
         tuned.experimental.traction_loss.steering_rate_threshold = 0.0;
         tuned.experimental.traction_loss.steering_angle_threshold = 0.0;
-        tuned.experimental.traction_loss.force_drop_threshold = 0.0;
+        tuned.experimental.traction_loss.force_change_threshold = 0.0;
         tuned.experimental.traction_loss.release_strength = 1.0;
         tuned.experimental.traction_loss.attack_ms = 1;
         tuned.experimental.traction_loss.recovery_ms = 1_000;
@@ -814,6 +815,55 @@ mod tests {
             other => panic!("unexpected result: {other:?}"),
         };
         assert!(second_mag < first_mag);
+    }
+
+    #[test]
+    fn traction_release_triggers_on_force_increase() {
+        let mut baseline = settings();
+        baseline.r#const.maximum_force = 1.0;
+        baseline.r#const.minimum_force = 0.0;
+        baseline.r#const.filter_threshold = 1.0;
+
+        let mut tuned = baseline.clone();
+        tuned.experimental.traction_loss.enabled = true;
+        tuned.experimental.traction_loss.steering_rate_threshold = 0.0;
+        tuned.experimental.traction_loss.steering_angle_threshold = 0.0;
+        tuned.experimental.traction_loss.force_change_threshold = 0.3;
+        tuned.experimental.traction_loss.release_strength = 1.0;
+        tuned.experimental.traction_loss.attack_ms = 1;
+        tuned.experimental.traction_loss.recovery_ms = 1_000;
+        tuned.experimental.traction_loss.min_force_floor = 0.0;
+        tuned.experimental.traction_loss.apply_constant = true;
+
+        let mut control = EffectEngine::new(baseline);
+        let mut release = EffectEngine::new(tuned);
+
+        let priming = EffectUpdate::Apply(GameEffect::Constant {
+            metadata: metadata(255),
+            magnitude: 1_000,
+        });
+        control.translate(&priming, 12_000);
+        release.translate(&priming, 12_000);
+
+        sleep(Duration::from_millis(5));
+
+        let spike = EffectUpdate::Apply(GameEffect::Constant {
+            metadata: metadata(255),
+            magnitude: 8_000,
+        });
+        let control_second = control.translate(&spike, -12_000);
+        let release_second = release.translate(&spike, -12_000);
+
+        let control_mag = match &control_second[0] {
+            WheelCommand::Constant(command) => command.magnitude.abs(),
+            other => panic!("unexpected result: {other:?}"),
+        };
+        let release_mag = match &release_second[0] {
+            WheelCommand::Constant(command) => command.magnitude.abs(),
+            other => panic!("unexpected result: {other:?}"),
+        };
+
+        assert!(release_mag < control_mag);
     }
 
     #[test]

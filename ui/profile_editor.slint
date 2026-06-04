@@ -303,7 +303,7 @@ export component ProfileEditorWindow inherits Window {
     in-out property <bool> experimental_slip_enabled: false;
     in-out property <float> experimental_slip_steering_rate_threshold;
     in-out property <float> experimental_slip_steering_angle_threshold;
-    in-out property <float> experimental_slip_force_drop_threshold;
+    in-out property <float> experimental_slip_force_change_threshold;
     in-out property <float> experimental_slip_release_strength;
     in-out property <float> experimental_slip_attack_ms;
     in-out property <float> experimental_slip_recovery_ms;
@@ -2070,7 +2070,7 @@ export component ProfileEditorWindow inherits Window {
 
                                         ToggleCard {
                                             title: "Traction Loss Release";
-                                            subtitle: "Reduce aligning/centering force when steering snap + force drop suggests grip breakaway.";
+                                            subtitle: "Reduce aligning/centering force when steering snap + force change suggests grip breakaway.";
                                             active: experimental_slip_enabled;
                                             pressed => {
                                                 root.experimental_slip_enabled = !root.experimental_slip_enabled;
@@ -2135,12 +2135,12 @@ export component ProfileEditorWindow inherits Window {
                                         spacing: 18px;
 
                                         FieldCard {
-                                            title: "Force Drop Threshold";
-                                            subtitle: "Minimum force-proxy drop required to trigger release (0-1).";
+                                            title: "Force Change Threshold";
+                                            subtitle: "Minimum force-proxy change required to trigger release (0-1).";
                                             minimum: 0;
                                             maximum: 1;
                                             step: 0.02;
-                                            value <=> root.experimental_slip_force_drop_threshold;
+                                            value <=> root.experimental_slip_force_change_threshold;
                                         }
 
                                         FieldCard {

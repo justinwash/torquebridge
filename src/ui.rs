@@ -66,7 +66,7 @@ struct ProfileEditorState {
     experimental_slip_enabled: bool,
     experimental_slip_steering_rate_threshold: f32,
     experimental_slip_steering_angle_threshold: f32,
-    experimental_slip_force_drop_threshold: f32,
+    experimental_slip_force_change_threshold: f32,
     experimental_slip_release_strength: f32,
     experimental_slip_attack_ms: f32,
     experimental_slip_recovery_ms: f32,
@@ -156,11 +156,11 @@ impl From<&FfbProfile> for ProfileEditorState {
                 .experimental
                 .traction_loss
                 .steering_angle_threshold,
-            experimental_slip_force_drop_threshold: profile
+            experimental_slip_force_change_threshold: profile
                 .ffb_parameters
                 .experimental
                 .traction_loss
-                .force_drop_threshold,
+                .force_change_threshold,
             experimental_slip_release_strength: profile
                 .ffb_parameters
                 .experimental
@@ -381,8 +381,8 @@ impl ProfileEditorState {
         window.set_experimental_slip_steering_angle_threshold(
             self.experimental_slip_steering_angle_threshold,
         );
-        window.set_experimental_slip_force_drop_threshold(
-            self.experimental_slip_force_drop_threshold,
+        window.set_experimental_slip_force_change_threshold(
+            self.experimental_slip_force_change_threshold,
         );
         window.set_experimental_slip_release_strength(self.experimental_slip_release_strength);
         window.set_experimental_slip_attack_ms(self.experimental_slip_attack_ms);
@@ -473,8 +473,8 @@ impl ProfileEditorState {
                 .get_experimental_slip_steering_rate_threshold(),
             experimental_slip_steering_angle_threshold: window
                 .get_experimental_slip_steering_angle_threshold(),
-            experimental_slip_force_drop_threshold: window
-                .get_experimental_slip_force_drop_threshold(),
+            experimental_slip_force_change_threshold: window
+                .get_experimental_slip_force_change_threshold(),
             experimental_slip_release_strength: window.get_experimental_slip_release_strength(),
             experimental_slip_attack_ms: window.get_experimental_slip_attack_ms(),
             experimental_slip_recovery_ms: window.get_experimental_slip_recovery_ms(),
@@ -601,7 +601,7 @@ impl ProfileEditorState {
             .ffb_parameters
             .experimental
             .traction_loss
-            .force_drop_threshold = self.experimental_slip_force_drop_threshold.clamp(0.0, 1.0);
+            .force_change_threshold = self.experimental_slip_force_change_threshold.clamp(0.0, 1.0);
         profile
             .ffb_parameters
             .experimental

@@ -176,8 +176,8 @@ pub struct TractionLossConfig {
     pub steering_rate_threshold: f32,
     #[serde(default = "default_slip_threshold")]
     pub steering_angle_threshold: f32,
-    #[serde(default = "default_slip_threshold")]
-    pub force_drop_threshold: f32,
+    #[serde(default = "default_slip_threshold", alias = "ForceDropThreshold")]
+    pub force_change_threshold: f32,
     #[serde(default = "default_output_gain")]
     pub release_strength: f32,
     #[serde(default = "default_attack_ms")]
@@ -200,7 +200,7 @@ impl Default for TractionLossConfig {
             enabled: false,
             steering_rate_threshold: default_slip_threshold(),
             steering_angle_threshold: default_slip_threshold(),
-            force_drop_threshold: default_slip_threshold(),
+            force_change_threshold: default_slip_threshold(),
             release_strength: default_output_gain(),
             attack_ms: default_attack_ms(),
             recovery_ms: default_recovery_ms(),
