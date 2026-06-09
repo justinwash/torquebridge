@@ -17,7 +17,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::rc::Rc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -29,9 +29,64 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const DIAGNOSTIC_EVENT_LIMIT: usize = 48;
 const OBSERVABILITY_EVENT_LIMIT: usize = 128;
+const DIAGNOSTICS_REFRESH_MIN_INTERVAL_MS: u64 = 1_000;
 const AUTO_CALIBRATION_SWEEP_INTERVAL_MS: u64 = 200;
 const AUTO_CALIBRATION_SWEEP_SAMPLE_TARGET: usize = 20;
 const DEFAULT_VJOY_DEVICE_ID: u32 = 1;
+
+thread_local! {
+    static DIAGNOSTICS_REFRESH_CACHE: RefCell<DiagnosticsRefreshCache> =
+        RefCell::new(DiagnosticsRefreshCache::default());
+}
+
+#[derive(Default)]
+struct DiagnosticsRefreshCache {
+    last_refresh: Option<Instant>,
+    last_source_label: String,
+    last_log_path: Option<PathBuf>,
+    last_log_modified: Option<SystemTime>,
+    last_log_len: u64,
+    last_observability_source_label: String,
+    last_diagnostics_log_path: String,
+    last_diagnostics_status: String,
+    last_diagnostics_event_count: String,
+    last_diagnostics_events: String,
+    last_telemetry_view: Option<TelemetryPanelView>,
+}
+
+impl DiagnosticsRefreshCache {
+    fn should_refresh(
+        &mut self,
+        source_label: &str,
+        log_path: &Path,
+        log_modified: Option<SystemTime>,
+        log_len: u64,
+    ) -> bool {
+        let now = Instant::now();
+        let source_changed = self.last_source_label != source_label;
+        let path_changed = self.last_log_path.as_deref() != Some(log_path);
+        let content_changed =
+            self.last_log_modified != log_modified || self.last_log_len != log_len;
+        let interval_elapsed = self
+            .last_refresh
+            .map(|ts| {
+                now.duration_since(ts) >= Duration::from_millis(DIAGNOSTICS_REFRESH_MIN_INTERVAL_MS)
+            })
+            .unwrap_or(true);
+
+        let should_refresh =
+            source_changed || path_changed || (content_changed && interval_elapsed);
+        if should_refresh {
+            self.last_refresh = Some(now);
+            self.last_source_label = source_label.to_string();
+            self.last_log_path = Some(log_path.to_path_buf());
+            self.last_log_modified = log_modified;
+            self.last_log_len = log_len;
+        }
+
+        should_refresh
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 struct ProfileEditorState {
@@ -66,7 +121,7 @@ struct ProfileEditorState {
     experimental_slip_enabled: bool,
     experimental_slip_steering_rate_threshold: f32,
     experimental_slip_steering_angle_threshold: f32,
-    experimental_slip_force_drop_threshold: f32,
+    experimental_slip_force_change_threshold: f32,
     experimental_slip_release_strength: f32,
     experimental_slip_attack_ms: f32,
     experimental_slip_recovery_ms: f32,
@@ -156,11 +211,11 @@ impl From<&FfbProfile> for ProfileEditorState {
                 .experimental
                 .traction_loss
                 .steering_angle_threshold,
-            experimental_slip_force_drop_threshold: profile
+            experimental_slip_force_change_threshold: profile
                 .ffb_parameters
                 .experimental
                 .traction_loss
-                .force_drop_threshold,
+                .force_change_threshold,
             experimental_slip_release_strength: profile
                 .ffb_parameters
                 .experimental
@@ -381,8 +436,8 @@ impl ProfileEditorState {
         window.set_experimental_slip_steering_angle_threshold(
             self.experimental_slip_steering_angle_threshold,
         );
-        window.set_experimental_slip_force_drop_threshold(
-            self.experimental_slip_force_drop_threshold,
+        window.set_experimental_slip_force_change_threshold(
+            self.experimental_slip_force_change_threshold,
         );
         window.set_experimental_slip_release_strength(self.experimental_slip_release_strength);
         window.set_experimental_slip_attack_ms(self.experimental_slip_attack_ms);
@@ -473,8 +528,8 @@ impl ProfileEditorState {
                 .get_experimental_slip_steering_rate_threshold(),
             experimental_slip_steering_angle_threshold: window
                 .get_experimental_slip_steering_angle_threshold(),
-            experimental_slip_force_drop_threshold: window
-                .get_experimental_slip_force_drop_threshold(),
+            experimental_slip_force_change_threshold: window
+                .get_experimental_slip_force_change_threshold(),
             experimental_slip_release_strength: window.get_experimental_slip_release_strength(),
             experimental_slip_attack_ms: window.get_experimental_slip_attack_ms(),
             experimental_slip_recovery_ms: window.get_experimental_slip_recovery_ms(),
@@ -601,7 +656,9 @@ impl ProfileEditorState {
             .ffb_parameters
             .experimental
             .traction_loss
-            .force_drop_threshold = self.experimental_slip_force_drop_threshold.clamp(0.0, 1.0);
+            .force_change_threshold = self
+            .experimental_slip_force_change_threshold
+            .clamp(0.0, 1.0);
         profile
             .ffb_parameters
             .experimental
@@ -1471,6 +1528,20 @@ impl TelemetryPanelView {
     }
 
     fn apply_to_window(&self, window: &ProfileEditorWindow) {
+        let should_apply = DIAGNOSTICS_REFRESH_CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            if cache.last_telemetry_view.as_ref() == Some(self) {
+                false
+            } else {
+                cache.last_telemetry_view = Some(self.clone());
+                true
+            }
+        });
+
+        if !should_apply {
+            return;
+        }
+
         window.set_telemetry_status(SharedString::from(self.status.clone()));
         window.set_telemetry_uptime(SharedString::from(self.uptime.clone()));
         window.set_telemetry_packet_rate(SharedString::from(self.packet_rate.clone()));
@@ -2996,8 +3067,7 @@ pub fn run_profile_editor(config_path: Option<&str>, profile_path: Option<&str>)
     let bridge_poll_timer = Timer::default();
     let weak_window = window.as_weak();
     let bridge_controller_handle = Rc::clone(&bridge_controller);
-    let observability_handle = Rc::clone(&observability);
-    bridge_poll_timer.start(TimerMode::Repeated, Duration::from_millis(500), move || {
+    bridge_poll_timer.start(TimerMode::Repeated, Duration::from_millis(750), move || {
         let Some(window) = weak_window.upgrade() else {
             return;
         };
@@ -3006,20 +3076,27 @@ pub fn run_profile_editor(config_path: Option<&str>, profile_path: Option<&str>)
         match bridge_controller.poll() {
             Ok(Some(message)) => {
                 sync_bridge_panel(&window, &bridge_controller);
-                refresh_diagnostics_panel(&window, &observability_handle.borrow());
                 window.set_status_message(SharedString::from(message));
             }
-            Ok(None) => {
-                refresh_diagnostics_panel(&window, &observability_handle.borrow());
-            }
+            Ok(None) => {}
             Err(error) => {
                 sync_bridge_panel(&window, &bridge_controller);
-                refresh_diagnostics_panel(&window, &observability_handle.borrow());
                 window.set_status_message(SharedString::from(format!(
                     "Bridge runtime check failed: {error}"
                 )));
             }
         }
+    });
+
+    let diagnostics_poll_timer = Timer::default();
+    let weak_window = window.as_weak();
+    let observability_handle = Rc::clone(&observability);
+    diagnostics_poll_timer.start(TimerMode::Repeated, Duration::from_millis(1_250), move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+
+        refresh_diagnostics_panel(&window, &observability_handle.borrow());
     });
 
     let result = window.run().context("profile editor exited with an error");
@@ -3706,13 +3783,42 @@ fn refresh_diagnostics_panel(
     window: &ProfileEditorWindow,
     observability: &ObservabilityController,
 ) {
+    if !diagnostics_panels_visible(window) {
+        return;
+    }
+
     let source_label = observability.source_label();
     let diagnostics_log = observability.current_log();
+    let log_path_text = diagnostics_log.path().display().to_string();
 
-    window.set_observability_source_label(SharedString::from(source_label.clone()));
-    window.set_diagnostics_log_path(SharedString::from(
-        diagnostics_log.path().display().to_string(),
-    ));
+    DIAGNOSTICS_REFRESH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.last_observability_source_label != source_label {
+            window.set_observability_source_label(SharedString::from(source_label.clone()));
+            cache.last_observability_source_label = source_label.clone();
+        }
+        if cache.last_diagnostics_log_path != log_path_text {
+            window.set_diagnostics_log_path(SharedString::from(log_path_text.clone()));
+            cache.last_diagnostics_log_path = log_path_text.clone();
+        }
+    });
+
+    let (log_modified, log_len) = match fs::metadata(diagnostics_log.path()) {
+        Ok(metadata) => (metadata.modified().ok(), metadata.len()),
+        Err(_) => (None, 0),
+    };
+
+    let should_refresh = DIAGNOSTICS_REFRESH_CACHE.with(|cache| {
+        cache.borrow_mut().should_refresh(
+            &source_label,
+            diagnostics_log.path(),
+            log_modified,
+            log_len,
+        )
+    });
+    if !should_refresh {
+        return;
+    }
 
     match diagnostics_log.read_recent(OBSERVABILITY_EVENT_LIMIT) {
         Ok(events) => {
@@ -3724,6 +3830,10 @@ fn refresh_diagnostics_panel(
             TelemetryPanelView::failed(&source_label, &error.to_string()).apply_to_window(window);
         }
     }
+}
+
+fn diagnostics_panels_visible(window: &ProfileEditorWindow) -> bool {
+    matches!(window.get_current_section(), 6 | 9)
 }
 
 fn apply_diagnostics_view(window: &ProfileEditorWindow, events: &[BridgeDiagnosticEvent]) {
@@ -3749,12 +3859,12 @@ fn apply_diagnostics_view(window: &ProfileEditorWindow, events: &[BridgeDiagnost
             .join("\n\n")
     };
 
-    window.set_diagnostics_status(SharedString::from(if diagnostics_events.is_empty() {
-        "Waiting for session"
+    let status_text = if diagnostics_events.is_empty() {
+        "Waiting for session".to_string()
     } else {
-        "Tail updated"
-    }));
-    window.set_diagnostics_event_count(SharedString::from(format!(
+        "Tail updated".to_string()
+    };
+    let event_count_text = format!(
         "{} recent event{}",
         diagnostics_events.len(),
         if diagnostics_events.len() == 1 {
@@ -3762,22 +3872,62 @@ fn apply_diagnostics_view(window: &ProfileEditorWindow, events: &[BridgeDiagnost
         } else {
             "s"
         }
-    )));
-    window.set_diagnostics_events(SharedString::from(diagnostics_text));
+    );
+
+    DIAGNOSTICS_REFRESH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.last_diagnostics_status != status_text {
+            window.set_diagnostics_status(SharedString::from(status_text.clone()));
+            cache.last_diagnostics_status = status_text.clone();
+        }
+        if cache.last_diagnostics_event_count != event_count_text {
+            window.set_diagnostics_event_count(SharedString::from(event_count_text.clone()));
+            cache.last_diagnostics_event_count = event_count_text.clone();
+        }
+        if cache.last_diagnostics_events != diagnostics_text {
+            window.set_diagnostics_events(SharedString::from(diagnostics_text.clone()));
+            cache.last_diagnostics_events = diagnostics_text;
+        }
+    });
 }
 
 fn apply_diagnostics_error(window: &ProfileEditorWindow, error: &str) {
-    window.set_diagnostics_status(SharedString::from("Read failed"));
-    window.set_diagnostics_event_count(SharedString::from("Diagnostics unavailable"));
-    window.set_diagnostics_events(SharedString::from(format!(
-        "Failed to read diagnostics log: {error}"
-    )));
+    let status_text = "Read failed".to_string();
+    let event_count_text = "Diagnostics unavailable".to_string();
+    let events_text = format!("Failed to read diagnostics log: {error}");
+
+    DIAGNOSTICS_REFRESH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.last_diagnostics_status != status_text {
+            window.set_diagnostics_status(SharedString::from(status_text.clone()));
+            cache.last_diagnostics_status = status_text.clone();
+        }
+        if cache.last_diagnostics_event_count != event_count_text {
+            window.set_diagnostics_event_count(SharedString::from(event_count_text.clone()));
+            cache.last_diagnostics_event_count = event_count_text.clone();
+        }
+        if cache.last_diagnostics_events != events_text {
+            window.set_diagnostics_events(SharedString::from(events_text.clone()));
+            cache.last_diagnostics_events = events_text;
+        }
+    });
 }
 
 fn sync_bridge_panel(window: &ProfileEditorWindow, bridge_controller: &BridgeController) {
-    window.set_bridge_running(bridge_controller.is_running());
-    window.set_bridge_status(SharedString::from(bridge_controller.status_label()));
-    window.set_bridge_detail(SharedString::from(bridge_controller.detail().to_string()));
+    let is_running = bridge_controller.is_running();
+    if window.get_bridge_running() != is_running {
+        window.set_bridge_running(is_running);
+    }
+
+    let status = bridge_controller.status_label();
+    if window.get_bridge_status().as_str() != status {
+        window.set_bridge_status(SharedString::from(status));
+    }
+
+    let detail = bridge_controller.detail();
+    if window.get_bridge_detail().as_str() != detail {
+        window.set_bridge_detail(SharedString::from(detail));
+    }
 }
 
 fn apply_bridge_safety_reset(
